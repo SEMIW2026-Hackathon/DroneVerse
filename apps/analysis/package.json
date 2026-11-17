@@ -1,0 +1,10 @@
+{
+  "name": "@droneverse/analysis",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "node ../../scripts/py.mjs -m uvicorn app.main:app --reload --port 8000",
+    "build": "node ../../scripts/py.mjs -m compileall -q app",
+    "test": "node ../../scripts/py.mjs -m pytest"
+  }
+}
