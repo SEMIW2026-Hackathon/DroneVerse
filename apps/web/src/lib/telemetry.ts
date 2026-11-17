@@ -9,6 +9,7 @@ import {
   type FlightPhase,
   type Telemetry,
 } from '@droneverse/shared';
+import { pushRenderTelemetry } from '../three/telemetryRenderStore';
 
 export type TelemetryLinkState =
   | 'connecting'
@@ -157,6 +158,7 @@ export function useTelemetryLink() {
       }
       const parsed = serverMessageSchema.safeParse(value);
       if (parsed.success && parsed.data.type === 'telemetry') {
+        pushRenderTelemetry(parsed.data.telemetry);
         pendingTelemetryRef.current = event.data;
         if (telemetryTimerRef.current === null) {
           telemetryTimerRef.current = setTimeout(() => {

@@ -1,33 +1,32 @@
 import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import type { DroneSpec, Telemetry } from '@droneverse/shared';
+import type { DroneSpec } from '@droneverse/shared';
 import { rotorLayout } from '../lib/droneShape';
 import { SparrowModel } from './SparrowModel';
 import { getDroneVisualConfig } from './droneVisualConfig';
-import { predictMotion, type MotionSample } from './motionSmoothing';
+import { type RenderMotion } from './motionSmoothing';
 
 interface Props {
   spec: DroneSpec;
   position?: [number, number, number];
   scale?: number;
-  telemetry: Telemetry | null;
-  motionSample?: MotionSample | null;
+  renderMotion: { current: RenderMotion };
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-export function DroneModel({ spec, position = [0, 3, 0], scale = 1, telemetry }: Props) {
+export function DroneModel({ spec, position = [0, 3, 0], scale = 1, renderMotion }: Props) {
   const visual = getDroneVisualConfig(spec);
   if (spec.id === 'sparrow-s4') {
-    return <SparrowModel position={position} scale={scale * visual.scale} telemetry={telemetry} />;
+    return <SparrowModel position={position} scale={scale * visual.scale} renderMotion={renderMotion} />;
   }
   return (
     <ProceduralDrone
       spec={spec}
       position={position}
       scale={scale * visual.scale}
-      telemetry={telemetry}
+      renderMotion={renderMotion}
       shellColor={visual.shell}
       accentColor={visual.accent}
     />
@@ -44,8 +43,7 @@ function ProceduralDrone({
   spec,
   position = [0, 3, 0],
   scale,
-  telemetry,
-  motionSample,
+  renderMotion,
   shellColor,
   accentColor,
 }: ProceduralProps) {
@@ -53,8 +51,7 @@ function ProceduralDrone({
   const visual = useRef<THREE.Group>(null);
   const rotors = useRef<(THREE.Group | null)[]>([]);
   const blurDiscs = useRef<(THREE.Mesh | null)[]>([]);
-  const motion = useRef({ mode: telemetry?.mode, changedAt: 0, power: 0, heading: telemetry?.headingDeg ?? 0 });
-  const sample = useRef<MotionSample | null>(null);
+  const motion = useRef({ mode: renderMotion.current.mode, changedAt: 0, power: 0, heading: renderMotion.current.heading });
   const previousVelocity = useRef(new THREE.Vector3());
   const acceleration = useRef(new THREE.Vector3());
   const rotorAngles = useMemo(
@@ -64,12 +61,13 @@ function ProceduralDrone({
 
   useFrame(({ clock }, delta) => {
     if (!group.current || !visual.current) return;
-    const mode = telemetry?.mode ?? 'disarmed';
+    const current = renderMotion.current;
+    const mode = current.mode;
     if (motion.current.mode !== mode) {
       motion.current.mode = mode;
       motion.current.changedAt = clock.elapsedTime;
     }
-    const stopped = mode === 'disarmed' || (mode === 'landing' && (telemetry?.position.altM ?? 0) < 0.2);
+    const stopped = mode === 'disarmed' || (mode === 'landing' && current.altitudeM < 0.2);
     const targetPower = stopped
       ? 0
       : mode === 'armed' || mode === 'takeoff'
@@ -77,35 +75,20 @@ function ProceduralDrone({
         : 1;
     motion.current.power = THREE.MathUtils.damp(motion.current.power, targetPower, 5, delta);
 
-    if (motionSample && (!sample.current || sample.current.atMs !== motionSample.atMs)) {
-      sample.current = motionSample;
-    }
-    const predicted = sample.current
-      ? predictMotion(sample.current, Date.now())
-      : { position: new THREE.Vector3(...position), heading: telemetry?.headingDeg ?? 0 };
-    if (sample.current) {
-      acceleration.current
-        .copy(sample.current.velocity)
+    acceleration.current
+        .copy(current.velocity)
         .sub(previousVelocity.current)
         .multiplyScalar(1 / Math.max(delta, 1 / 120));
-      previousVelocity.current.copy(sample.current.velocity);
-    } else {
-      acceleration.current.set(0, 0, 0);
-    }
-    group.current.position.lerp(predicted.position, 1 - Math.exp(-delta * 8));
-    const speedFactor = clamp((telemetry?.speedKmh ?? 0) / 40, 0, 1);
-    const heading = predicted.heading;
+    previousVelocity.current.copy(current.velocity);
+    group.current.position.lerp(current.position, 1 - Math.exp(-delta * 8));
+    const speedFactor = clamp(current.speedKmh / 40, 0, 1);
+    const heading = current.heading;
     const headingDelta = THREE.MathUtils.euclideanModulo(heading - motion.current.heading + 180, 360) - 180;
     motion.current.heading = heading;
     const pitchLean = clamp(-acceleration.current.z * 0.025 - speedFactor * 0.04, -0.18, 0.18);
     const rollLean = clamp(acceleration.current.x * 0.025, -0.14, 0.14);
     visual.current.rotation.x = THREE.MathUtils.damp(visual.current.rotation.x, pitchLean, 5, delta);
-    visual.current.rotation.y = THREE.MathUtils.damp(
-      visual.current.rotation.y,
-      THREE.MathUtils.degToRad(predicted.heading),
-      5,
-      delta,
-    );
+    visual.current.rotation.y = THREE.MathUtils.damp(visual.current.rotation.y, THREE.MathUtils.degToRad(heading), 5, delta);
     visual.current.rotation.z = THREE.MathUtils.damp(
       visual.current.rotation.z,
       rollLean - clamp(headingDelta / 45, -1, 1) * 0.12,

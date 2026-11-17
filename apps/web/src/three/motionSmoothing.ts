@@ -8,6 +8,15 @@ export interface MotionSample {
   atMs: number;
 }
 
+export interface RenderMotion {
+  position: THREE.Vector3;
+  velocity: THREE.Vector3;
+  heading: number;
+  mode: string;
+  speedKmh: number;
+  altitudeM: number;
+}
+
 export function predictMotion(sample: MotionSample, nowMs: number, maxPredictionS = 0.3) {
   const ageS = Math.max(0, Math.min(maxPredictionS, (nowMs - sample.atMs) / 1000));
   return {

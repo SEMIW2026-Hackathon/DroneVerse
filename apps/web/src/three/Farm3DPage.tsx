@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { ClientCommand } from '@droneverse/shared';
 import { isTelemetryFresh, useTelemetryLink } from '../lib/telemetry';
@@ -21,6 +21,8 @@ export function Farm3DPage() {
   const [visited, setVisited] = useState<{ x: number; z: number }[]>([]);
   const telemetry = useTelemetryLink();
   const currentTelemetry = telemetry.telemetry;
+  const telemetryRef = useRef(currentTelemetry);
+  telemetryRef.current = currentTelemetry;
   const linkAlive =
     telemetry.state === 'connected' &&
     isTelemetryFresh(telemetry.receivedAt) &&
@@ -44,13 +46,13 @@ export function Farm3DPage() {
   );
   const onManualControl = useCallback(
     (control: ManualInput) => {
-      if (!linkAlive || !telemetry.telemetry?.simulated) return;
+      if (!linkAlive || !telemetryRef.current?.simulated) return;
       sendCommand('00000000-0000-4000-8000-000000000000', {
         type: 'manualControl',
         ...control,
       });
     },
-    [linkAlive, sendCommand, telemetry.telemetry?.simulated],
+    [linkAlive, sendCommand],
   );
   const onEnableManual = useCallback(() => {
     if (!linkAlive || telemetry.telemetry?.mode !== 'mission') return;
@@ -130,7 +132,6 @@ export function Farm3DPage() {
         <FarmScene
           fields={farmFields}
           drone={drone}
-          telemetry={linkAlive ? telemetry.telemetry : null}
           view={view}
         />
         {view === 'camera' && <CameraViewOverlay sensor={drone?.sensor ?? 'rgb'} />}

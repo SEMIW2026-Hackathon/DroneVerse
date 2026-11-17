@@ -1,16 +1,17 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { useLayoutEffect, useMemo, useRef } from 'react';
+import { Html } from '@react-three/drei';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
-import type { DroneSpec, Field, Telemetry } from '@droneverse/shared';
+import type { DroneSpec, Field } from '@droneverse/shared';
 import { DroneModel } from './DroneModel';
 import { getHelipadPosition, pointInRing, projectFields, type Point2, type ProjectedField } from './coordinates';
 import { FARM_SCENE_CONFIG } from './sceneConfig';
-import { predictMotion, type MotionSample } from './motionSmoothing';
+import { getRenderBufferStats, getRenderTelemetry } from './telemetryRenderStore';
+import type { RenderMotion } from './motionSmoothing';
 
 interface Props {
   fields: Field[];
   drone: DroneSpec | null;
-  telemetry: Telemetry | null;
   view: 'follow' | 'camera' | 'map';
 }
 
@@ -341,65 +342,116 @@ function Helipad({ position }: { position: Point2 }) {
   );
 }
 
-function FarmWorld({ fields, drone, telemetry, view }: Props) {
+function SmoothnessProbe({ motion }: { motion: { current: RenderMotion } }) {
+  const [snapshot, setSnapshot] = useState({ interval: 0, depth: 0, delta: 0, spikes: 0, graph: [] as number[] });
+  const previous = useRef<THREE.Vector3 | null>(null);
+  const deltas = useRef<number[]>([]);
+  const spikes = useRef(0);
+  useFrame(() => {
+    const current = motion.current.position;
+    if (previous.current) {
+      const delta = current.distanceTo(previous.current);
+      const values = deltas.current;
+      const average = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : delta;
+      if (average > 0 && delta > average * 2) spikes.current += 1;
+      values.push(delta);
+      if (values.length > 30) values.shift();
+    }
+    previous.current = current.clone();
+  });
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const stats = getRenderBufferStats();
+      setSnapshot({
+        interval: stats.averageIntervalMs,
+        depth: stats.depth,
+        delta: deltas.current[deltas.current.length - 1] ?? 0,
+        spikes: spikes.current,
+        graph: [...deltas.current],
+      });
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, []);
+  return (
+    <Html fullscreen>
+      <div className="pointer-events-none absolute bottom-3 left-3 rounded bg-black/70 p-2 font-mono text-[9px] text-white">
+        <div>telemetry {snapshot.interval.toFixed(0)}ms · buffer {snapshot.depth}</div>
+        <div>frame Δ {snapshot.delta.toFixed(3)} · spikes {snapshot.spikes}</div>
+        <div className="mt-1 flex h-3 items-end gap-px">
+          {snapshot.graph.map((value, index) => (
+            <span key={index} className="w-1 bg-cyan-300" style={{ height: `${Math.min(100, value * 500)}%` }} />
+          ))}
+        </div>
+      </div>
+    </Html>
+  );
+}
+
+function FarmWorld({ fields, drone, view }: Props) {
   const layout = useMemo(() => projectFields(fields), [fields]);
   const helipadPosition = useMemo(() => getHelipadPosition(layout), [layout]);
-  const dronePosition = telemetry
-    ? telemetry.mode === 'disarmed'
-      ? helipadPosition
-      : layout.projectPosition(telemetry.position.lon, telemetry.position.lat)
-    : helipadPosition;
-  const droneRenderHeight =
-    telemetry && telemetry.position.altM > 0.1
-      ? telemetry.position.altM
-      : FARM_SCENE_CONFIG.droneGroundY;
-  const motionSample = useMemo<MotionSample>(() => {
-    const position = new THREE.Vector3(dronePosition.x, droneRenderHeight, dronePosition.z);
-    if (!telemetry || telemetry.mode === 'disarmed') {
-      return {
-        position,
-        velocity: new THREE.Vector3(),
-        heading: telemetry?.headingDeg ?? 0,
-        yawRate: 0,
-        atMs: telemetry?.t ?? Date.now(),
-      };
-    }
-    const latScale = Math.cos((telemetry.position.lat * Math.PI) / 180);
-    const east = layout.projectPosition(
-      telemetry.position.lon + telemetry.velocity.eastMps / (111_320 * latScale),
-      telemetry.position.lat,
-    );
-    const north = layout.projectPosition(
-      telemetry.position.lon,
-      telemetry.position.lat + telemetry.velocity.northMps / 110_540,
-    );
-    return {
-      position,
-      velocity: new THREE.Vector3(east.x - dronePosition.x, telemetry.velocity.upMps, north.z - dronePosition.z),
-      heading: telemetry.headingDeg,
-      yawRate: telemetry.velocity.yawRateDegPerSec,
-      atMs: telemetry.t,
-    };
-  }, [dronePosition, droneRenderHeight, layout, telemetry]);
-  const cameraSample = useRef<MotionSample>(motionSample);
+  const renderMotion = useRef<RenderMotion>({
+    position: new THREE.Vector3(helipadPosition.x, FARM_SCENE_CONFIG.droneGroundY, helipadPosition.z),
+    velocity: new THREE.Vector3(),
+    heading: 0,
+    mode: 'disarmed',
+    speedKmh: 0,
+    altitudeM: 0,
+  });
   const { camera } = useThree();
+  const debug = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
+  const cameraForward = useMemo(() => new THREE.Vector3(0, 0, -1), []);
+  const cameraDirection = useMemo(() => new THREE.Vector3(), []);
   useFrame((_, delta) => {
-    if (cameraSample.current.atMs !== motionSample.atMs) cameraSample.current = motionSample;
-    const predicted = predictMotion(cameraSample.current, Date.now());
-    const target = predicted.position;
-    const droneHeight = target.y;
-    const desired =
-      view === 'map'
-        ? new THREE.Vector3(target.x, 70, target.z + 0.01)
-        : view === 'follow'
-          ? new THREE.Vector3(target.x + 12, target.y + 10, target.z + 16)
-          : new THREE.Vector3(target.x, droneHeight + 0.2, target.z);
-    const lookTarget =
-      view === 'camera'
-        ? new THREE.Vector3(target.x, 0, target.z + Math.max(1, droneHeight * 0.35))
-        : target;
-    camera.position.lerp(desired, 1 - Math.exp(-delta * 4));
-    camera.lookAt(lookTarget);
+    const telemetry = getRenderTelemetry();
+    if (telemetry) {
+      if (telemetry.mode === 'disarmed') {
+        renderMotion.current.position.set(helipadPosition.x, FARM_SCENE_CONFIG.droneGroundY, helipadPosition.z);
+        renderMotion.current.velocity.set(0, 0, 0);
+      } else {
+        const position = layout.projectPosition(telemetry.position.lon, telemetry.position.lat);
+        const latScale = Math.cos((telemetry.position.lat * Math.PI) / 180);
+        const east = layout.projectPosition(
+          telemetry.position.lon + telemetry.velocity.eastMps / (111_320 * latScale),
+          telemetry.position.lat,
+        );
+        const north = layout.projectPosition(
+          telemetry.position.lon,
+          telemetry.position.lat + telemetry.velocity.northMps / 110_540,
+        );
+        renderMotion.current.position.set(
+          position.x,
+          telemetry.position.altM > 0.1 ? telemetry.position.altM : FARM_SCENE_CONFIG.droneGroundY,
+          position.z,
+        );
+        renderMotion.current.velocity.set(east.x - position.x, telemetry.velocity.upMps, north.z - position.z);
+      }
+      renderMotion.current.heading = telemetry.headingDeg;
+      renderMotion.current.mode = telemetry.mode;
+      renderMotion.current.speedKmh = telemetry.speedKmh;
+      renderMotion.current.altitudeM = telemetry.position.altM;
+    } else {
+      renderMotion.current.position.set(helipadPosition.x, FARM_SCENE_CONFIG.droneGroundY, helipadPosition.z);
+      renderMotion.current.velocity.set(0, 0, 0);
+      renderMotion.current.mode = 'disarmed';
+      renderMotion.current.speedKmh = 0;
+      renderMotion.current.altitudeM = 0;
+    }
+    const target = renderMotion.current.position;
+    if (view === 'camera') {
+      camera.position.copy(target);
+      const yaw = THREE.MathUtils.degToRad(renderMotion.current.heading);
+      const tilt = THREE.MathUtils.degToRad(58);
+      cameraDirection.set(Math.sin(yaw) * Math.cos(tilt), -Math.sin(tilt), Math.cos(yaw) * Math.cos(tilt));
+      camera.quaternion.setFromUnitVectors(cameraForward, cameraDirection);
+    } else {
+      const desired =
+        view === 'map'
+          ? new THREE.Vector3(target.x, 70, target.z + 0.01)
+          : new THREE.Vector3(target.x + 12, target.y + 10, target.z + 16);
+      camera.position.lerp(desired, 1 - Math.exp(-delta * 6));
+      camera.lookAt(target);
+    }
   });
   return (
     <>
@@ -428,17 +480,17 @@ function FarmWorld({ fields, drone, telemetry, view }: Props) {
       {drone && view !== 'camera' && (
         <DroneModel
           spec={drone}
-          position={[dronePosition.x, droneRenderHeight, dronePosition.z]}
+          position={[renderMotion.current.position.x, renderMotion.current.position.y, renderMotion.current.position.z]}
           scale={0.9}
-          telemetry={telemetry}
-          motionSample={motionSample}
+          renderMotion={renderMotion}
         />
       )}
+      {debug && <SmoothnessProbe motion={renderMotion} />}
     </>
   );
 }
 
-export function FarmScene({ fields, drone, telemetry, view }: Props) {
+export function FarmScene({ fields, drone, view }: Props) {
   return (
     <div className="h-full min-h-[28rem] w-full overflow-hidden rounded-3xl bg-sky-100">
       <Canvas
@@ -446,7 +498,7 @@ export function FarmScene({ fields, drone, telemetry, view }: Props) {
         camera={{ position: [18, 18, 24], fov: 45, near: 0.01, far: 300 }}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
       >
-        <FarmWorld fields={fields} drone={drone} telemetry={telemetry} view={view} />
+        <FarmWorld fields={fields} drone={drone} view={view} />
       </Canvas>
     </div>
   );
