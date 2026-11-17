@@ -5,6 +5,7 @@ import {
   describeFailures,
   evaluatePreflight,
   haversineM,
+  makeProjection,
   initialMissionState,
   isTerminalPhase,
   shouldReturnHome,
@@ -169,11 +170,15 @@ export class FlightController {
         return this.landNow();
       case 'abort':
         return this.abort();
+      case 'manualMode':
+        return this.enterManualMode();
       case 'simControl':
         if (!this.driver.sim)
           return { ok: false, error: 'Simulator controls need a simulated drone' };
         this.driver.sim.apply(command.control);
         return { ok: true };
+      case 'manualControl':
+        return this.manualControl(command);
     }
   }
 
@@ -287,6 +292,7 @@ export class FlightController {
     if (!auth || this.now() > auth.expiresAt) {
       return { ok: false, error: 'Launch has not been confirmed, or the confirmation expired' };
     }
+
     if (source === 'user' && this.sequence) {
       return { ok: false, error: 'A launch sequence is already running' };
     }
@@ -321,6 +327,65 @@ export class FlightController {
         return this.apply({ type: 'airborne' });
       }
     }
+  }
+
+  private async manualControl(
+    command: Extract<BridgeCommand, { type: 'manualControl' }>,
+  ): Promise<CommandResult> {
+    if (!this.mission || !this.lastTelemetry || !this.airborne()) {
+      return { ok: false, error: 'Take off first: manual flight requires an airborne mission' };
+    }
+    const telemetry = this.lastTelemetry;
+    const distanceToHomeM = haversineM(telemetry.position, this.mission.home);
+    const rth = shouldReturnHome({
+      batteryPct: telemetry.batteryPct,
+      altM: telemetry.position.altM,
+      distanceToHomeM,
+      drone: this.mission.drone,
+      windKmh: this.mission.windKmh,
+    });
+    if (rth.returnNow) {
+      return { ok: false, error: 'Manual flight refused: battery reserve requires return-to-home' };
+    }
+    if (telemetry.mode !== 'manual') {
+      return { ok: false, error: 'Take manual control first' };
+    }
+    const durationS = command.durationMs / 1000;
+    const projection = makeProjection(this.mission.home);
+    const current = projection.toXY(telemetry.position);
+    const horizontalSpeed = Math.min(
+      this.flight.manual.speedMps,
+      (this.mission.drone.topSpeedKmh / 3.6) * 0.5,
+    );
+    const next = {
+      x: current.x + command.right * horizontalSpeed * durationS,
+      y: current.y + command.forward * horizontalSpeed * durationS,
+    };
+    if (Math.hypot(next.x, next.y) > this.plan.risk.maxDistanceFromHomeM) {
+      return { ok: false, error: 'Manual flight refused: geofence boundary reached' };
+    }
+    const nextAltitude =
+      telemetry.position.altM + command.vertical * this.flight.manual.verticalSpeedMps * durationS;
+    if (nextAltitude > this.plan.limits.maxAltitudeM) {
+      return { ok: false, error: 'Manual flight refused: altitude ceiling reached' };
+    }
+    if (nextAltitude < this.flight.launch.groundAltM) {
+      return { ok: false, error: 'Manual flight refused: minimum altitude reached' };
+    }
+    await this.driver.manualControl(command);
+    return { ok: true };
+  }
+
+  private async enterManualMode(): Promise<CommandResult> {
+    if (!this.mission || !this.lastTelemetry || !this.airborne()) {
+      return { ok: false, error: 'Take off first: manual flight requires an airborne mission' };
+    }
+    if (this.lastTelemetry.mode === 'manual') return { ok: true };
+    if (this.lastTelemetry.mode !== 'mission') {
+      return { ok: false, error: 'Manual control is only available during the mission' };
+    }
+    await this.driver.enterManualMode();
+    return { ok: true };
   }
 
   // ---------------- safety commands: never gated, never need confirmation ----------------

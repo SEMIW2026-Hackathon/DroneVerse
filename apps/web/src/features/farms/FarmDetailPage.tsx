@@ -65,12 +65,20 @@ export function FarmDetailPage() {
               + Draw a field
             </button>
             {fields.length > 0 && (
-              <Link
-                to={`/farms/${farmId}/plan`}
-                className="mb-3 block w-full rounded-xl border border-emerald-600 py-2 text-center font-medium text-emerald-700"
-              >
-                Plan a mission
-              </Link>
+              <div className="mb-3 grid grid-cols-2 gap-2">
+                <Link
+                  to={`/farms/${farmId}/plan`}
+                  className="rounded-xl border border-emerald-600 py-2 text-center font-medium text-emerald-700"
+                >
+                  Plan a mission
+                </Link>
+                <Link
+                  to={`/farms/${farmId}/3d`}
+                  className="rounded-xl border border-sky-600 py-2 text-center font-medium text-sky-700"
+                >
+                  3D farm
+                </Link>
+              </div>
             )}
             <ul className="space-y-2">
               {fields.map((f) => (

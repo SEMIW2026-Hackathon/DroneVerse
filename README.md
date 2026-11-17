@@ -302,6 +302,26 @@ Offline-tolerant UI, retry queues, roles and permissions, audit log of every dro
 
 ---
 
+## How to run locally
+
+From the repository root:
+
+```powershell
+pnpm install
+pnpm dev
+```
+
+`pnpm dev` builds the shared package, then starts the API on port `3001`, the
+SimDriver bridge connected to `ws://localhost:3001/ws/bridge`, and the Vite web
+app on port `5173`. Open `http://localhost:5173`. The browser connects to
+`/ws/telemetry` on the web origin; Vite proxies that WebSocket to the API.
+Startup logs include a summary of the web, API, and bridge status. If the
+telemetry banner reports an API, bridge, or stale-telemetry problem, follow its
+plain-language hint and inspect the prefixed `[api]`, `[bridge]`, and `[web]`
+logs.
+
+Stop all three processes with `Ctrl+C`.
+
 ## 10. Instructions for Claude Code (also copy into `CLAUDE.md`)
 
 1. Work **one phase at a time**. Don't start the next until the current "Done when" is met.

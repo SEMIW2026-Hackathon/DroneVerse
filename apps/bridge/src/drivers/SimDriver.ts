@@ -47,7 +47,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
  * everything it produces is marked `simulated: true`.
  *
  * Time only advances through `step(dt)`, so tests are deterministic. `connect()`
- * starts a timer that calls `step` at the telemetry rate.
+ * advances physics at a fixed 50 Hz and publishes telemetry at its configured rate.
  */
 export class SimDriver implements DroneDriver {
   readonly kind = 'sim' as const;
@@ -75,12 +75,16 @@ export class SimDriver implements DroneDriver {
   private altM = 0;
   private headingDeg = 0;
   private speedMps = 0;
+  private velocity = { x: 0, y: 0, z: 0 };
+  private yawRateDegPerSec = 0;
   private batteryPct: number;
   private motorsOk: boolean[];
   private gpsLoss = false;
   private linkDegraded = false;
   private gpsSats: number;
   private linkQuality: number;
+  private speedMultiplier: number;
+  private manualInput = { forward: 0, right: 0, vertical: 0, yawRate: 0, remainingS: 0 };
   private takeoffTargetM = 0;
   private takeoffAnnounced = false;
   private missionAnnounced = false;
@@ -99,6 +103,7 @@ export class SimDriver implements DroneDriver {
     this.rotors = opts.rotors ?? 4;
     this.maxFlightMin = opts.maxFlightMin ?? 28;
     this.topSpeedKmh = opts.topSpeedKmh ?? 54;
+    this.speedMultiplier = this.flight.sim.speedMultiplier;
     this.batteryPct = this.flight.sim.startBatteryPct;
     this.motorsOk = Array<boolean>(this.rotors).fill(true);
     this.gpsSats = this.flight.sim.baseGpsSats;
@@ -111,13 +116,17 @@ export class SimDriver implements DroneDriver {
 
   async connect(): Promise<void> {
     if (this.timer) return;
-    const intervalMs = 1000 / this.flight.telemetry.rateHz;
-    let last = this.now();
+    const physicsStepS = 1 / 50;
+    const telemetryStepS = 1 / this.flight.telemetry.rateHz;
+    let telemetryElapsedS = telemetryStepS;
     this.timer = setInterval(() => {
-      const t = this.now();
-      this.step(((t - last) / 1000) * this.flight.sim.speedMultiplier);
-      last = t;
-    }, intervalMs);
+      this.step(physicsStepS * this.speedMultiplier, false);
+      telemetryElapsedS += physicsStepS * this.speedMultiplier;
+      if (telemetryElapsedS >= telemetryStepS) {
+        telemetryElapsedS = 0;
+        this.emitTelemetry();
+      }
+    }, physicsStepS * 1000);
   }
 
   async disconnect(): Promise<void> {
@@ -143,6 +152,12 @@ export class SimDriver implements DroneDriver {
       position: { lat: ll.lat, lon: ll.lon, altM: this.altM },
       headingDeg: this.headingDeg,
       speedKmh: this.speedMps * 3.6,
+      velocity: {
+        eastMps: this.velocity.x,
+        northMps: -this.velocity.z,
+        upMps: this.velocity.y,
+        yawRateDegPerSec: this.yawRateDegPerSec,
+      },
       batteryPct: this.batteryPct,
       gpsSats: this.gpsSats,
       linkQuality: this.linkQuality,
@@ -170,6 +185,8 @@ export class SimDriver implements DroneDriver {
     this.pos = { x: 0, y: 0 };
     this.route = mission.waypoints.map((w) => this.proj!.toXY(w));
     this.routeIndex = 0;
+    this.velocity = { x: 0, y: 0, z: 0 };
+    this.yawRateDegPerSec = 0;
     this.takeoffAnnounced = false;
     this.missionAnnounced = false;
     this.emitTelemetry();
@@ -188,6 +205,8 @@ export class SimDriver implements DroneDriver {
     if (this.altM > this.flight.launch.groundAltM) throw new Error('Cannot disarm in the air');
     this.mode = 'disarmed';
     this.speedMps = 0;
+    this.velocity = { x: 0, y: 0, z: 0 };
+    this.yawRateDegPerSec = 0;
     this.emitTelemetry();
   }
 
@@ -221,6 +240,31 @@ export class SimDriver implements DroneDriver {
     this.emitTelemetry();
   }
 
+  async enterManualMode(): Promise<void> {
+    if (this.mode !== 'mission') throw new Error(`Cannot enter manual mode while ${this.mode}`);
+    if (this.altM <= this.flight.launch.groundAltM) throw new Error('Manual mode requires an airborne drone');
+    this.mode = 'manual';
+    this.manualInput = { forward: 0, right: 0, vertical: 0, yawRate: 0, remainingS: 0 };
+    this.emitTelemetry();
+  }
+
+  async manualControl(control: {
+    forward: number;
+    right: number;
+    vertical: number;
+    yawRate: number;
+    durationMs: number;
+  }): Promise<void> {
+    if (this.mode !== 'manual') {
+      throw new Error(`Cannot fly manually while ${this.mode}`);
+    }
+    this.manualInput = {
+      ...control,
+      remainingS: Math.min(control.durationMs, this.flight.manual.inputTimeoutMs) / 1000,
+    };
+    this.emitTelemetry();
+  }
+
   private applyControl(c: SimControl) {
     switch (c.action) {
       case 'motorFault':
@@ -236,6 +280,9 @@ export class SimDriver implements DroneDriver {
       case 'setBattery':
         this.batteryPct = c.pct;
         break;
+      case 'setSpeed':
+        this.speedMultiplier = c.multiplier;
+        break;
     }
     this.updateNoise();
     this.emitTelemetry();
@@ -244,7 +291,7 @@ export class SimDriver implements DroneDriver {
   // ---- Physics ----
 
   /** Advance the simulation by `dt` seconds and publish telemetry. */
-  step(dt: number): void {
+  step(dt: number, emit = true): void {
     const s = this.flight.sim;
     const b = this.plan.battery;
     let drainFactor = 0;
@@ -252,13 +299,19 @@ export class SimDriver implements DroneDriver {
     switch (this.mode) {
       case 'disarmed':
         this.speedMps = 0;
+        this.velocity = { x: 0, y: 0, z: 0 };
+        this.yawRateDegPerSec = 0;
         break;
       case 'armed':
         this.speedMps = 0;
+        this.velocity = { x: 0, y: 0, z: 0 };
+        this.yawRateDegPerSec = 0;
         drainFactor = s.armedDrainFactor;
         break;
       case 'takeoff': {
         this.speedMps = 0;
+        this.velocity = { x: 0, y: 0, z: 0 };
+        this.yawRateDegPerSec = 0;
         if (this.altM < this.takeoffTargetM) {
           this.altM = Math.min(this.takeoffTargetM, this.altM + b.climbRateMps * dt);
           drainFactor = b.climbDrainFactor;
@@ -275,15 +328,19 @@ export class SimDriver implements DroneDriver {
         drainFactor = 1;
         this.flyMission(dt);
         break;
+      case 'manual':
+        drainFactor = 1;
+        this.flyManual(dt);
+        break;
       case 'rth':
         drainFactor = 1;
+        this.yawRateDegPerSec = 0;
         this.flyHome(dt);
         break;
       case 'landing':
         drainFactor = 1;
+        this.yawRateDegPerSec = 0;
         this.descend(dt);
-        break;
-      case 'manual':
         break;
     }
 
@@ -300,7 +357,7 @@ export class SimDriver implements DroneDriver {
     }
 
     this.updateNoise();
-    this.emitTelemetry();
+    if (emit) this.emitTelemetry();
   }
 
   private flyMission(dt: number) {
@@ -323,6 +380,45 @@ export class SimDriver implements DroneDriver {
     });
   }
 
+  private flyManual(dt: number) {
+    const active = this.manualInput.remainingS > 0;
+    const manual = this.flight.manual;
+    const acceleration = manual.accelerationMps2 ?? 5;
+    const deceleration = manual.decelerationMps2 ?? 7;
+    const yawRate = manual.yawRateDegPerSec ?? 90;
+    const horizontalSpeed = Math.min(this.topSpeedKmh / 3.6 * 0.5, manual.speedMps);
+    const targetX = active ? this.manualInput.right * horizontalSpeed : 0;
+    const targetZ = active ? -this.manualInput.forward * horizontalSpeed : 0;
+    const targetVertical = active ? this.manualInput.vertical * manual.verticalSpeedMps : 0;
+    const ramp = (current: number, target: number, rate: number) =>
+      current + clamp(target - current, -rate * dt, rate * dt);
+    const horizontalTargetSpeed = Math.hypot(targetX, targetZ);
+    const horizontalRate =
+      horizontalTargetSpeed > Math.hypot(this.velocity.x, this.velocity.z)
+        ? acceleration
+        : deceleration;
+    this.velocity.x = ramp(this.velocity.x, targetX, horizontalRate);
+    this.velocity.z = ramp(this.velocity.z, targetZ, horizontalRate);
+    this.velocity.y = ramp(
+      this.velocity.y,
+      targetVertical,
+      targetVertical === 0 ? deceleration : acceleration,
+    );
+    this.yawRateDegPerSec = ramp(
+      this.yawRateDegPerSec,
+      active ? this.manualInput.yawRate * yawRate : 0,
+      yawRate * 4,
+    );
+    this.pos = {
+      x: this.pos.x + this.velocity.x * dt,
+      y: this.pos.y + this.velocity.z * dt,
+    };
+    this.altM = Math.max(0, this.altM + this.velocity.y * dt);
+    this.speedMps = Math.hypot(this.velocity.x, this.velocity.z);
+    this.headingDeg = (this.headingDeg + this.yawRateDegPerSec * dt + 360) % 360;
+    if (active) this.manualInput.remainingS = Math.max(0, this.manualInput.remainingS - dt);
+  }
+
   /** Move toward a point at `speed`; call `arrived` once within the arrival radius. */
   private moveToward(target: XY, speed: number, dt: number, arrived: () => void) {
     const dx = target.x - this.pos.x;
@@ -331,20 +427,24 @@ export class SimDriver implements DroneDriver {
     const stepLen = speed * dt;
     if (dist <= Math.max(stepLen, this.flight.sim.arriveRadiusM)) {
       this.pos = { ...target };
+      this.velocity = { x: 0, y: 0, z: 0 };
       this.speedMps = 0;
       arrived();
       return;
     }
     this.headingDeg = ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360;
+    this.velocity = { x: (dx / dist) * speed, y: 0, z: (dy / dist) * speed };
     this.pos = { x: this.pos.x + (dx / dist) * stepLen, y: this.pos.y + (dy / dist) * stepLen };
     this.speedMps = speed;
   }
 
   private descend(dt: number) {
     this.speedMps = 0;
+    this.velocity = { x: 0, y: -this.flight.rth.descentRateMps, z: 0 };
     this.altM = Math.max(0, this.altM - this.flight.rth.descentRateMps * dt);
     if (this.altM === 0) {
       this.mode = 'disarmed';
+      this.velocity = { x: 0, y: 0, z: 0 };
       this.emitEvent({ type: 'touchdown' });
     }
   }

@@ -8,6 +8,7 @@ const app = buildApp();
 
 try {
   await app.listen({ host, port });
+  console.log(`[api] OK: listening on port ${port}`);
 } catch (err) {
   app.log.error(err);
   process.exit(1);

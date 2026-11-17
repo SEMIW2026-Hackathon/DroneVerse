@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import type { DroneSpec } from '@droneverse/shared';
+import { DRONE_ACCENT_COLORS, type DroneSpec } from '@droneverse/shared';
 import { getPool } from '../db/pool.js';
 import { requireAuth } from './authGuard.js';
 
@@ -7,11 +7,12 @@ const COLUMNS = `id, name, tagline, type, rotors,
   max_flight_min as "maxFlightMin", top_speed_kmh as "topSpeedKmh", camera_mp as "cameraMP",
   sensor, payload_l as "payloadL", driver, specs_are_placeholder as "specsArePlaceholder"`;
 
-type DroneRow = Omit<DroneSpec, 'payloadL'> & { payloadL: number | null };
+type DroneRow = Omit<DroneSpec, 'payloadL' | 'accentColor'> & { payloadL: number | null };
 
 /** Null in the database means "no payload"; the shared type uses an absent key. */
 export function toDroneSpec({ payloadL, ...rest }: DroneRow): DroneSpec {
-  return payloadL === null ? rest : { ...rest, payloadL };
+  const accentColor = DRONE_ACCENT_COLORS[rest.id] ?? '#059669';
+  return payloadL === null ? { ...rest, accentColor } : { ...rest, payloadL, accentColor };
 }
 
 export async function loadDrone(id: string): Promise<DroneSpec | undefined> {

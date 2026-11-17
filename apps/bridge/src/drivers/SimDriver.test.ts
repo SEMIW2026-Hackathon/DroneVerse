@@ -138,6 +138,54 @@ describe('SimDriver', () => {
   });
 
   describe('following the mission', () => {
+    it('holds position after the 300 ms manual input timeout', async () => {
+      const { driver, step, fly } = await setup();
+      await fly();
+      await driver.enterManualMode();
+      const before = driver.telemetry().position;
+      await driver.manualControl({ forward: 1, right: 0, vertical: 0, yawRate: 0, durationMs: 300 });
+      step(0.2);
+      const moving = driver.telemetry().position;
+      expect(haversineM(moving, before)).toBeGreaterThan(0);
+      step(0.4);
+      const timedOut = driver.telemetry().position;
+      step(0.4);
+      const held = driver.telemetry().position;
+      expect(haversineM(timedOut, moving)).toBeGreaterThan(0);
+      expect(haversineM(held, timedOut)).toBeCloseTo(0, 5);
+    });
+
+    it('caps manual horizontal speed at the selected drone top speed', async () => {
+      const { driver, step } = await setup({
+        drone: { id: 'slow', name: 'Slow', rotors: 4, maxFlightMin: 28, topSpeedKmh: 10 },
+      });
+      await driver.arm();
+      await driver.takeoff(10);
+      step(4);
+      await driver.startMission();
+      await driver.enterManualMode();
+      await driver.manualControl({ forward: 1, right: 0, vertical: 0, yawRate: 0, durationMs: 300 });
+      step(0.1);
+      expect(driver.telemetry().speedKmh).toBeLessThanOrEqual(10);
+    });
+
+    it('limits manual acceleration and eases to a stop after release', async () => {
+      const { driver, step } = await setup();
+      await driver.arm();
+      await driver.takeoff(10);
+      step(4);
+      await driver.startMission();
+      await driver.enterManualMode();
+      await driver.manualControl({ forward: 1, right: 0, vertical: 0, yawRate: 0, durationMs: 300 });
+      step(0.1);
+      expect(driver.telemetry().speedKmh).toBeLessThanOrEqual(1.8);
+      await driver.manualControl({ forward: 0, right: 0, vertical: 0, yawRate: 0, durationMs: 300 });
+      step(0.1);
+      expect(driver.telemetry().speedKmh).toBeLessThanOrEqual(1.8);
+      step(1);
+      expect(driver.telemetry().speedKmh).toBeCloseTo(0, 5);
+    });
+
     it('climbs at the climb rate, announces takeoff once, then holds altitude', async () => {
       const { driver, events, step, fly } = await setup();
       await driver.arm();

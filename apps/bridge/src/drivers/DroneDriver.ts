@@ -42,4 +42,12 @@ export interface DroneDriver {
   startMission(): Promise<void>;
   returnToHome(): Promise<void>;
   land(): Promise<void>;
+  enterManualMode(): Promise<void>;
+  manualControl(control: {
+    forward: number;
+    right: number;
+    vertical: number;
+    yawRate: number;
+    durationMs: number;
+  }): Promise<void>;
 }

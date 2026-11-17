@@ -15,11 +15,13 @@
     "@droneverse/shared": "workspace:*",
     "fastify": "^5.0.0",
     "pg": "^8.23.1",
+    "ws": "^8.18.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/pg": "^8.23.1",
+    "@types/ws": "^8.18.2",
     "tsx": "^4.19.0",
     "vitest": "^2.1.0"
   }

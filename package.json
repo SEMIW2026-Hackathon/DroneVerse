@@ -8,13 +8,14 @@
     "node": ">=20.12"
   },
   "scripts": {
-    "dev": "pnpm --filter @droneverse/shared build && pnpm --parallel --filter @droneverse/web --filter @droneverse/api dev",
+    "dev": "pnpm --filter @droneverse/shared build && node scripts/dev.mjs",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r typecheck",
+    "assets:optimize:sparrow": "node scripts/optimize-sparrow.mjs",
     "db:migrate": "pnpm --filter @droneverse/api db:migrate"
   },
   "devDependencies": {

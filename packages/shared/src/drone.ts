@@ -4,6 +4,7 @@ export const droneSpecSchema = z.object({
   id: z.string(),
   name: z.string(), // "Condor X8"
   tagline: z.string(), // "Big farms"
+  accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   type: z.enum(['survey', 'spray']),
   rotors: z.union([z.literal(4), z.literal(6), z.literal(8)]),
   maxFlightMin: z.number().positive(),
@@ -16,6 +17,12 @@ export const droneSpecSchema = z.object({
   specsArePlaceholder: z.boolean(),
 });
 export type DroneSpec = z.infer<typeof droneSpecSchema>;
+
+export const DRONE_ACCENT_COLORS: Record<string, string> = {
+  'sparrow-s4': '#14b8a6',
+  'kestrel-h6': '#0ea5e9',
+  'condor-x8': '#f59e0b',
+};
 
 export const droneModeSchema = z.enum([
   'disarmed',
@@ -32,6 +39,12 @@ export const telemetrySchema = z.object({
   droneId: z.string(),
   t: z.number(),
   position: z.object({ lat: z.number(), lon: z.number(), altM: z.number() }),
+  velocity: z.object({
+    eastMps: z.number(),
+    northMps: z.number(),
+    upMps: z.number(),
+    yawRateDegPerSec: z.number(),
+  }),
   headingDeg: z.number(),
   speedKmh: z.number(),
   batteryPct: z.number().min(0).max(100),

@@ -155,6 +155,14 @@ export function MissionPlannerPage() {
         {result && (
           <div className={busy ? 'opacity-50 transition-opacity' : 'transition-opacity'}>
             <PlanResults result={result} />
+            {result.canLaunch && result.missionId && (
+              <Link
+                to={`/preflight?missionId=${result.missionId}`}
+                className="mt-4 block rounded-xl bg-emerald-700 px-4 py-3 text-center font-semibold text-white"
+              >
+                Continue to pre-flight
+              </Link>
+            )}
           </div>
         )}
       </aside>

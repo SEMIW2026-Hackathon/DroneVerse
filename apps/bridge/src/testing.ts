@@ -41,6 +41,7 @@ export const settle = () => new Promise<void>((resolve) => setImmediate(resolve)
 interface RigOptions {
   steps?: readonly SequenceStep[];
   flight?: FlightConfig;
+  plan?: import('@droneverse/shared').PlanConfig;
 }
 
 /** A controller wired to a simulator with a fake clock, stepped by hand. */
@@ -48,7 +49,7 @@ export function makeRig(options: RigOptions = {}) {
   let nowMs = 1_700_000_000_000;
   const events: FlightEvent[] = [];
   let n = 0;
-  const driver = new SimDriver({ now: () => nowMs, flight: options.flight });
+  const driver = new SimDriver({ now: () => nowMs, flight: options.flight, plan: options.plan });
   const controller = new FlightController({
     driver,
     now: () => nowMs,
@@ -56,6 +57,7 @@ export function makeRig(options: RigOptions = {}) {
     newId: () => `cmd-${++n}`,
     steps: options.steps,
     flight: options.flight,
+    plan: options.plan,
   });
 
   /** Advance the simulation, letting async work finish after each step. */
@@ -100,6 +102,7 @@ export function makeRig(options: RigOptions = {}) {
       type: 'confirmLaunch',
       acknowledgedSimulated: true,
       areaClear: true,
+      regulationsFollowed: true,
       autoSequence: true,
       ...over,
     });

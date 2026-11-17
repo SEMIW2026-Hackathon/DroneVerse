@@ -40,6 +40,7 @@ export const simControlSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('gpsLoss'), on: z.boolean() }),
   z.object({ action: z.literal('linkDegraded'), on: z.boolean() }),
   z.object({ action: z.literal('setBattery'), pct: z.number().min(0).max(100) }),
+  z.object({ action: z.literal('setSpeed'), multiplier: z.union([z.literal(1), z.literal(2), z.literal(4)]) }),
 ]);
 export type SimControl = z.infer<typeof simControlSchema>;
 
@@ -49,15 +50,26 @@ const startMission = z.object({ type: z.literal('startMission') });
 const returnToHome = z.object({ type: z.literal('returnToHome') });
 const land = z.object({ type: z.literal('land') });
 const abort = z.object({ type: z.literal('abort') });
+const manualMode = z.object({ type: z.literal('manualMode') });
 const verifyPreflight = z.object({ type: z.literal('verifyPreflight') });
 const confirm = z.object({ type: z.literal('confirm'), kind: confirmationKindSchema });
 const simControl = z.object({ type: z.literal('simControl'), control: simControlSchema });
+const manualControl = z.object({
+  type: z.literal('manualControl'),
+  forward: z.number().min(-1).max(1),
+  right: z.number().min(-1).max(1),
+  vertical: z.number().min(-1).max(1),
+  yawRate: z.number().min(-1).max(1),
+  durationMs: z.number().int().min(50).max(300),
+});
 const confirmLaunch = z.object({
   type: z.literal('confirmLaunch'),
   /** Must be true when the drone is simulated: the user has been told it is. */
   acknowledgedSimulated: z.boolean(),
   /** The user confirms the area is clear and they will follow local rules. */
   areaClear: z.literal(true),
+  /** The operator confirms local aviation rules and permissions are being followed. */
+  regulationsFollowed: z.literal(true),
   /** Run arm -> takeoff -> start mission automatically. False leaves each step to a command. */
   autoSequence: z.boolean().default(true),
 });
@@ -72,12 +84,14 @@ const shared = [
   returnToHome,
   land,
   abort,
+  manualMode,
   simControl,
+  manualControl,
 ] as const;
 
 /** Commands the browser may send. The API fills in the mission payload for uploads. */
 export const clientCommandSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('uploadMission') }),
+  z.object({ type: z.literal('uploadMission'), mission: uploadedMissionSchema }),
   ...shared,
 ]);
 export type ClientCommand = z.infer<typeof clientCommandSchema>;

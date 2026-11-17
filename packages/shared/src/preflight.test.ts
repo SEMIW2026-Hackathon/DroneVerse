@@ -7,6 +7,7 @@ const good: Telemetry = {
   droneId: 'sparrow-s4',
   t: 0,
   position: { lat: -1.3, lon: 36.8, altM: 0 },
+  velocity: { eastMps: 0, northMps: 0, upMps: 0, yawRateDegPerSec: 0 },
   headingDeg: 0,
   speedKmh: 0,
   batteryPct: 98,

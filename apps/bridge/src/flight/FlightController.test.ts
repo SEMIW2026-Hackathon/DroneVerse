@@ -12,6 +12,84 @@ async function airborne(r: ReturnType<typeof makeRig>) {
   expect(await r.until(() => r.phase() === 'scanning', 60)).toBe(true);
 }
 
+async function manual(r: ReturnType<typeof makeRig>) {
+  expect((await r.send({ type: 'manualMode' })).ok).toBe(true);
+}
+
+describe('manual flight safety limits', () => {
+  it('refuses manual input when the battery reserve requires RTH', async () => {
+    const r = makeRig();
+    await airborne(r);
+    await manual(r);
+    await r.sim({ action: 'setBattery', pct: 20 });
+    const result = await r.send({
+      type: 'manualControl',
+      forward: 1,
+      right: 0,
+      vertical: 0,
+      yawRate: 0,
+      durationMs: 100,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/battery reserve/);
+  });
+
+  it('refuses manual input beyond the geofence', async () => {
+    const r = makeRig({
+      plan: { ...PLAN_CONFIG, risk: { ...PLAN_CONFIG.risk, maxDistanceFromHomeM: 2 } },
+    });
+    await airborne(r);
+    await manual(r);
+    expect(
+      (await r.send({ type: 'manualControl', forward: 1, right: 0, vertical: 0, yawRate: 0, durationMs: 100 })).ok,
+    ).toBe(true);
+    await r.advance(0.2);
+    const result = await r.send({
+      type: 'manualControl',
+      forward: 1,
+      right: 0,
+      vertical: 0,
+      yawRate: 0,
+      durationMs: 300,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/geofence/);
+  });
+
+  it('refuses manual input above the altitude ceiling', async () => {
+    const r = makeRig({
+      plan: { ...PLAN_CONFIG, limits: { ...PLAN_CONFIG.limits, maxAltitudeM: 50 } },
+    });
+    await airborne(r);
+    await manual(r);
+    const result = await r.send({
+      type: 'manualControl',
+      forward: 0,
+      right: 0,
+      vertical: 1,
+      yawRate: 0,
+      durationMs: 200,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/altitude ceiling/);
+  });
+
+  it('refuses setpoints before manual mode is entered', async () => {
+    const r = makeRig();
+    await airborne(r);
+    const result = await r.send({
+      type: 'manualControl',
+      forward: 1,
+      right: 0,
+      vertical: 0,
+      yawRate: 0,
+      durationMs: 100,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/manual control first/);
+  });
+});
+
 describe('pre-flight gate', () => {
   it('refuses arm, takeoff and startMission with no launch confirmation', async () => {
     const r = makeRig();

@@ -1,5 +1,10 @@
 import type { FastifyInstance } from 'fastify';
-import { PLAN_CONFIG, planRequestSchema, type Polygon } from '@droneverse/shared';
+import {
+  PLAN_CONFIG,
+  planRequestSchema,
+  uploadedMissionSchema,
+  type Polygon,
+} from '@droneverse/shared';
 import { getPool } from '../db/pool.js';
 import { planMission } from '../domain/planMission.js';
 import { PlanError } from '../domain/surveyPlanner.js';
@@ -29,7 +34,7 @@ export async function missionRoutes(app: FastifyInstance) {
     // Keep the caller's field order so results are stable.
     const byId = new Map(rows.map((r) => [r.id, r]));
     try {
-      return planMission({
+      const result = planMission({
         fields: fieldIds.map((id) => byId.get(id)!),
         drone,
         params: input.params,
@@ -37,9 +42,58 @@ export async function missionRoutes(app: FastifyInstance) {
         home: input.home,
         cfg: PLAN_CONFIG,
       });
+      const { rows: saved } = await getPool().query<{ id: string }>(
+        `insert into missions
+          (owner_id, drone_id, drone, waypoints, speed_kmh, altitude_m, home, wind_kmh, required_battery_pct)
+         values ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7::jsonb, $8, $9)
+         returning id`,
+        [
+          req.user!.id,
+          drone.id,
+          JSON.stringify(drone),
+          JSON.stringify(result.waypoints),
+          input.params.speedKmh,
+          input.params.altitudeM,
+          JSON.stringify(result.home),
+          input.windKmh,
+          Math.min(100, result.stats.batteryUsedPct + result.stats.reservePct),
+        ],
+      );
+      return { ...result, missionId: saved[0]!.id };
     } catch (err) {
       if (err instanceof PlanError) return reply.code(400).send({ error: err.message });
       throw err;
     }
+  });
+
+  app.get('/missions/:missionId', async (req, reply) => {
+    const { missionId } = req.params as { missionId: string };
+    const { rows } = await getPool().query<{
+      id: string;
+      drone: unknown;
+      waypoints: unknown;
+      speed_kmh: number;
+      altitude_m: number;
+      home: unknown;
+      wind_kmh: number;
+      required_battery_pct: number;
+    }>(
+      `select id, drone, waypoints, speed_kmh, altitude_m, home, wind_kmh, required_battery_pct
+         from missions where id = $1 and owner_id = $2`,
+      [missionId, req.user!.id],
+    );
+    const row = rows[0];
+    if (!row) return reply.code(404).send({ error: 'Mission not found' });
+    const mission = uploadedMissionSchema.parse({
+      missionId: row.id,
+      drone: row.drone,
+      waypoints: row.waypoints,
+      speedKmh: row.speed_kmh,
+      altitudeM: row.altitude_m,
+      home: row.home,
+      windKmh: row.wind_kmh,
+      requiredBatteryPct: row.required_battery_pct,
+    });
+    return { mission };
   });
 }

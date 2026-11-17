@@ -10,6 +10,7 @@ import type {
   DroneSpec,
   PlanRequest,
   PlanResult,
+  UploadedMission,
 } from '@droneverse/shared';
 import { API_BASE } from './config';
 
@@ -78,4 +79,5 @@ export const api = {
 
   listDrones: () => request<{ drones: DroneSpec[] }>('GET', '/drones'),
   planMission: (input: PlanRequest) => request<PlanResult>('POST', '/missions/plan', input),
+  getMission: (id: string) => request<{ mission: UploadedMission }>('GET', `/missions/${id}`),
 };

@@ -60,6 +60,7 @@ export interface PlanStats {
 }
 
 export interface PlanResult {
+  missionId?: string;
   home: LonLat;
   waypoints: { lat: number; lon: number; altM: number }[];
   fields: { fieldId: string; sweepAngleDeg: number; lineCount: number }[];

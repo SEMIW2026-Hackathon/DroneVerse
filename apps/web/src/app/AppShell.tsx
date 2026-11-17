@@ -1,5 +1,6 @@
 import { Link, Navigate, Outlet } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
+import { TelemetryStatus } from '../features/live-flight/TelemetryStatus';
 
 /** Layout for signed-in pages; redirects to /login when there is no session. */
 export function AppShell() {
@@ -17,6 +18,7 @@ export function AppShell() {
         <nav className="flex items-center gap-4 text-sm">
           <Link to="/">Farms</Link>
           <Link to="/fleet">Fleet</Link>
+          <Link to="/preflight">Pre-flight</Link>
         </nav>
         <div className="flex items-center gap-3 text-sm">
           <span className="hidden sm:inline">{user.name}</span>
@@ -25,6 +27,7 @@ export function AppShell() {
           </button>
         </div>
       </header>
+      <TelemetryStatus />
       <div className="min-h-0 flex-1">
         <Outlet />
       </div>

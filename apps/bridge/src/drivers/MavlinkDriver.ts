@@ -48,4 +48,16 @@ export class MavlinkDriver implements DroneDriver {
   land(): Promise<void> {
     return notImplemented();
   }
+  enterManualMode(): Promise<void> {
+    return notImplemented();
+  }
+  manualControl(_control: {
+    forward: number;
+    right: number;
+    vertical: number;
+    yawRate: number;
+    durationMs: number;
+  }): Promise<void> {
+    return notImplemented();
+  }
 }

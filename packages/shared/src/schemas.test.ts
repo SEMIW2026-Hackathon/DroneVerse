@@ -7,6 +7,7 @@ describe('shared schemas', () => {
       droneId: 'd1',
       t: 0,
       position: { lat: 0, lon: 0, altM: 0 },
+      velocity: { eastMps: 0, northMps: 0, upMps: 0, yawRateDegPerSec: 0 },
       headingDeg: 0,
       speedKmh: 0,
       batteryPct: 120,

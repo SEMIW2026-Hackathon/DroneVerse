@@ -53,6 +53,16 @@ export interface FlightConfig {
     arriveRadiusM: number;
     seed: number;
   };
+  manual: {
+    speedMps: number;
+    verticalSpeedMps: number;
+    accelerationMps2: number;
+    decelerationMps2: number;
+    yawRateDegPerSec: number;
+    inputRampMs: number;
+    setpointHz: number;
+    inputTimeoutMs: number;
+  };
 }
 
 export const FLIGHT_CONFIG: FlightConfig = {
@@ -78,5 +88,15 @@ export const FLIGHT_CONFIG: FlightConfig = {
     armedDrainFactor: 0.3,
     arriveRadiusM: 2,
     seed: 1,
+  },
+  manual: {
+    speedMps: 8,
+    verticalSpeedMps: 3,
+    accelerationMps2: 5,
+    decelerationMps2: 7,
+    yawRateDegPerSec: 90,
+    inputRampMs: 200,
+    setpointHz: 20,
+    inputTimeoutMs: 300,
   },
 };
