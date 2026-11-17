@@ -99,13 +99,13 @@ export function addFieldLayers(map: Map) {
   });
 }
 
-export function setFields(map: Map, fields: Field[], selectedId: string | null) {
+export function setFields(map: Map, fields: Field[], selectedIds: string[]) {
   const data = {
     type: 'FeatureCollection' as const,
     features: fields.map((f) => ({
       type: 'Feature' as const,
       id: f.id,
-      properties: { id: f.id, selected: f.id === selectedId },
+      properties: { id: f.id, selected: selectedIds.includes(f.id) },
       geometry: f.boundary,
     })),
   };
@@ -145,4 +145,69 @@ export function fitToFields(map: Map, fields: Field[]) {
     }
   }
   if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, maxZoom: 17, duration: 0 });
+}
+
+/** Planned flight path, its waypoints and the launch point. */
+export function addPlanLayers(map: Map) {
+  map.addSource('plan', { type: 'geojson', data: empty });
+  map.addLayer({
+    id: 'plan-line',
+    type: 'line',
+    source: 'plan',
+    filter: ['==', ['geometry-type'], 'LineString'],
+    paint: { 'line-color': MAP_COLORS.plan, 'line-width': 2.5 },
+  });
+  map.addLayer({
+    id: 'plan-waypoints',
+    type: 'circle',
+    source: 'plan',
+    filter: ['all', ['==', ['geometry-type'], 'Point'], ['!', ['get', 'home']]],
+    paint: {
+      'circle-radius': 3,
+      'circle-color': '#fff',
+      'circle-stroke-color': MAP_COLORS.plan,
+      'circle-stroke-width': 1.5,
+    },
+  });
+  map.addLayer({
+    id: 'plan-home',
+    type: 'circle',
+    source: 'plan',
+    filter: ['all', ['==', ['geometry-type'], 'Point'], ['get', 'home']],
+    paint: {
+      'circle-radius': 8,
+      'circle-color': MAP_COLORS.home,
+      'circle-stroke-color': '#fff',
+      'circle-stroke-width': 2,
+    },
+  });
+}
+
+export function setPlan(map: Map, path: LngLat[], home: LngLat | null) {
+  const features: unknown[] = [];
+  if (path.length >= 2) {
+    features.push({
+      type: 'Feature',
+      properties: {},
+      geometry: { type: 'LineString', coordinates: path },
+    });
+  }
+  for (const p of path) {
+    features.push({
+      type: 'Feature',
+      properties: { home: false },
+      geometry: { type: 'Point', coordinates: p },
+    });
+  }
+  if (home) {
+    features.push({
+      type: 'Feature',
+      properties: { home: true },
+      geometry: { type: 'Point', coordinates: home },
+    });
+  }
+  (map.getSource('plan') as GeoJSONSource | undefined)?.setData({
+    type: 'FeatureCollection',
+    features,
+  } as never);
 }

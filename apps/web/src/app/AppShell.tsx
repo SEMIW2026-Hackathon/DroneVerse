@@ -14,6 +14,10 @@ export function AppShell() {
         <Link to="/" className="font-bold">
           Droneverse 🚁🌾
         </Link>
+        <nav className="flex items-center gap-4 text-sm">
+          <Link to="/">Farms</Link>
+          <Link to="/fleet">Fleet</Link>
+        </nav>
         <div className="flex items-center gap-3 text-sm">
           <span className="hidden sm:inline">{user.name}</span>
           <button onClick={logout} className="rounded-full bg-white/20 px-3 py-1">

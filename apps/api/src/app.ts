@@ -1,8 +1,10 @@
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
 import { authRoutes } from './routes/auth.js';
+import { droneRoutes } from './routes/drones.js';
 import { farmRoutes } from './routes/farms.js';
 import { fieldRoutes } from './routes/fields.js';
+import { missionRoutes } from './routes/missions.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -36,6 +38,8 @@ export function buildApp(): FastifyInstance {
   app.register(authRoutes);
   app.register(farmRoutes);
   app.register(fieldRoutes);
+  app.register(droneRoutes);
+  app.register(missionRoutes);
 
   return app;
 }

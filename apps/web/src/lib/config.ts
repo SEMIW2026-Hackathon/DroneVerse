@@ -8,6 +8,8 @@ export const MAP_COLORS = {
   field: '#16a34a',
   fieldSelected: '#f59e0b',
   draft: '#2563eb',
+  plan: '#c026d3',
+  home: '#dc2626',
 };
 
 export const MAP_BASEMAPS = {

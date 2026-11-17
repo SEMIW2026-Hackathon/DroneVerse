@@ -77,6 +77,7 @@ run('farm and field flow (creates and deletes a temporary user)', () => {
       })
     ).json().farm;
 
+    const fieldIds: string[] = [];
     for (const [i, ring] of Object.values(SHAPES).entries()) {
       const res = await app.inject({
         method: 'POST',
@@ -90,6 +91,7 @@ run('farm and field flow (creates and deletes a temporary user)', () => {
       });
       expect(res.statusCode).toBe(201);
       expect(res.json().field.areaHa).toBeGreaterThan(0);
+      fieldIds.push(res.json().field.id);
     }
 
     const list = await app.inject({
@@ -98,6 +100,53 @@ run('farm and field flow (creates and deletes a temporary user)', () => {
       headers: auth,
     });
     expect(list.json().fields).toHaveLength(3);
+
+    // Drone registry is seeded with the three placeholder drones.
+    const drones = (await app.inject({ method: 'GET', url: '/drones', headers: auth })).json()
+      .drones;
+    expect(drones.map((d: { id: string }) => d.id)).toEqual([
+      'sparrow-s4',
+      'kestrel-h6',
+      'condor-x8',
+    ]);
+    expect(drones.every((d: { specsArePlaceholder: boolean }) => d.specsArePlaceholder)).toBe(true);
+
+    // Plan a mission over two of the fields.
+    const params = { altitudeM: 60, frontOverlapPct: 75, sideOverlapPct: 65, speedKmh: 25 };
+    const planRes = await app.inject({
+      method: 'POST',
+      url: '/missions/plan',
+      headers: auth,
+      payload: { fieldIds: fieldIds.slice(0, 2), droneId: 'kestrel-h6', params },
+    });
+    expect(planRes.statusCode).toBe(200);
+    const plan = planRes.json();
+    expect(plan.waypoints.length).toBeGreaterThan(4);
+    expect(plan.fields).toHaveLength(2);
+    expect(plan.stats.batteryUsedPct).toBeGreaterThan(0);
+
+    // Unknown field or drone is a 404.
+    const ghost = '00000000-0000-4000-8000-000000000000';
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/missions/plan',
+          headers: auth,
+          payload: { fieldIds: [ghost], droneId: 'kestrel-h6', params },
+        })
+      ).statusCode,
+    ).toBe(404);
+    expect(
+      (
+        await app.inject({
+          method: 'POST',
+          url: '/missions/plan',
+          headers: auth,
+          payload: { fieldIds: fieldIds.slice(0, 1), droneId: 'nope', params },
+        })
+      ).statusCode,
+    ).toBe(404);
 
     // A self-intersecting "bow tie" is rejected.
     const bow = await app.inject({

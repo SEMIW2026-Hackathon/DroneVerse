@@ -12,6 +12,8 @@ export const droneSpecSchema = z.object({
   sensor: z.enum(['rgb', 'multispectral']),
   payloadL: z.number().positive().optional(), // spray tank, if any
   driver: z.enum(['sim', 'mavlink']),
+  /** True while the numbers are made-up stand-ins, not measured specs. */
+  specsArePlaceholder: z.boolean(),
 });
 export type DroneSpec = z.infer<typeof droneSpecSchema>;
 

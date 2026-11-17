@@ -26,3 +26,17 @@ Ambiguous choices made while building, newest last.
 - **TanStack Query not added;** a Zustand store is enough for two screens.
 - **Basemaps:** OpenStreetMap tiles and Esri World Imagery (satellite, default). Both are fine for development; check each provider's terms or switch to a paid tile source before production.
 - **Database tests are opt-in** (`RUN_DB_TESTS=1`) because they hit the real database. They create a temporary user and delete it afterwards.
+
+## Phase 2
+
+- **Planning code lives in `apps/api/src/domain/`** as pure functions (`surveyPlanner`, `batteryEstimator`, `riskChecks`, `planMission`), exposed as `POST /missions/plan`. The web app calls it with a "Generate plan" button rather than recomputing on every slider move, since each call also does database lookups. Nothing is saved yet; saving a mission arrives with Phase 3, when it has to be launched.
+- **All tunables are in `packages/shared/src/planConfig.ts`** (reserve 25%, takeoff/landing time, climb and wind drain, camera field of view, wind and altitude limits, slider defaults). Values marked PLACEHOLDER there are guesses.
+- **Drone registry is a `drones` table** (migration 002), global rather than per user, seeded with Sparrow S4, Kestrel H6 and Condor X8. Every spec is flagged `specs_are_placeholder` and the UI shows "Placeholder specs, not measured".
+- **One camera model for all drones** (74 degree horizontal field of view, 4:3 sensor). The drone's megapixels only change the ground sample distance. Per-drone optics can be added once real cameras are chosen.
+- **Path planning:** lines run in one direction across the field, alternating each line (lawnmower). For each field it tries every sweep angle in 5 degree steps and every start corner and keeps the shortest route. Concave fields get several segments on a line instead of one that crosses the gap. The drone still flies straight between segments, so on a concave field a transit leg can briefly leave the field boundary; the autopilot geofence (Phase 3 to 5) is what enforces the real limit.
+- **Multiple fields:** visited nearest-first from the launch point, one flight on one battery. Splitting a big job into several batteries is not planned yet; the planner tells the user to shrink the area instead.
+- **Battery model:** `rated minutes of flight -> percent per minute`, plus extra drain for wind and climbing. The trip out, survey and trip home are all counted, and the 25% reserve must be left on landing.
+- **Both an endurance overrun and a reserve breach are "critical"** (block launch), because a mission that dips into the reserve would trigger return-to-home before finishing. Only one of the two is reported when both apply.
+- **Wind is typed in by the operator** (no weather feed yet). No-fly zones are supported by the risk checks but nothing supplies zone data yet, so that check never fires in the app.
+- **Launch point:** defaults to the first corner of the first field; the user can set it on the map. Return distance is measured to it.
+- **Basemap, auth and DB decisions from Phase 1 still apply.**

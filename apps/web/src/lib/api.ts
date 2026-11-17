@@ -7,6 +7,9 @@ import type {
   LoginInput,
   RegisterInput,
   User,
+  DroneSpec,
+  PlanRequest,
+  PlanResult,
 } from '@droneverse/shared';
 import { API_BASE } from './config';
 
@@ -72,4 +75,7 @@ export const api = {
   updateField: (id: string, input: FieldUpdate) =>
     request<{ field: Field }>('PATCH', `/fields/${id}`, input),
   deleteField: (id: string) => request<void>('DELETE', `/fields/${id}`),
+
+  listDrones: () => request<{ drones: DroneSpec[] }>('GET', '/drones'),
+  planMission: (input: PlanRequest) => request<PlanResult>('POST', '/missions/plan', input),
 };

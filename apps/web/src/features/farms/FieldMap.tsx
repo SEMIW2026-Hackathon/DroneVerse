@@ -3,18 +3,39 @@ import { useEffect, useRef, useState } from 'react';
 import type { Map } from 'maplibre-gl';
 import type { Field } from '@droneverse/shared';
 import { MAP_BASEMAPS, type BasemapKey } from '../../lib/config';
-import { addFieldLayers, createMap, fitToFields, setBasemap, setFields } from '../../map/layers';
+import {
+  addFieldLayers,
+  addPlanLayers,
+  createMap,
+  fitToFields,
+  setBasemap,
+  setFields,
+  setPlan,
+  type LngLat,
+} from '../../map/layers';
 
 interface Props {
   fields: Field[];
-  selectedId: string | null;
+  selectedIds: string[];
   onMapReady: (map: Map) => void;
   onSelect: (id: string | null) => void;
   /** While drawing, clicks add corners instead of selecting fields. */
   drawing: boolean;
+  /** Flight path preview and launch point (mission planner). */
+  plan?: { path: LngLat[]; home: LngLat | null };
+  /** When set, a map click reports its position instead of selecting a field. */
+  onPickPoint?: (point: LngLat) => void;
 }
 
-export function FieldMap({ fields, selectedId, onMapReady, onSelect, drawing }: Props) {
+export function FieldMap({
+  fields,
+  selectedIds,
+  onMapReady,
+  onSelect,
+  drawing,
+  plan,
+  onPickPoint,
+}: Props) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
   const onMapReadyRef = useRef(onMapReady);
@@ -30,6 +51,7 @@ export function FieldMap({ fields, selectedId, onMapReady, onSelect, drawing }: 
     mapRef.current = map;
     map.on('load', () => {
       addFieldLayers(map);
+      addPlanLayers(map);
       setReady(true);
       onMapReadyRef.current(map);
     });
@@ -42,12 +64,16 @@ export function FieldMap({ fields, selectedId, onMapReady, onSelect, drawing }: 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    setFields(map, fields, selectedId);
+    setFields(map, fields, selectedIds);
     if (!fitted.current && fields.length > 0) {
       fitToFields(map, fields);
       fitted.current = true;
     }
-  }, [fields, selectedId, ready]);
+  }, [fields, selectedIds, ready]);
+
+  useEffect(() => {
+    if (mapRef.current && ready) setPlan(mapRef.current, plan?.path ?? [], plan?.home ?? null);
+  }, [plan, ready]);
 
   useEffect(() => {
     if (mapRef.current && ready) setBasemap(mapRef.current, basemap);
@@ -56,13 +82,21 @@ export function FieldMap({ fields, selectedId, onMapReady, onSelect, drawing }: 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready || drawing) return;
-    const onClick = (e: { point: { x: number; y: number } }) => {
+    const onClick = (e: {
+      point: { x: number; y: number };
+      lngLat: { lng: number; lat: number };
+    }) => {
+      if (onPickPoint) return onPickPoint([e.lngLat.lng, e.lngLat.lat]);
       const hit = map.queryRenderedFeatures([e.point.x, e.point.y], { layers: ['fields-fill'] })[0];
       onSelect((hit?.properties?.id as string | undefined) ?? null);
     };
     map.on('click', onClick);
-    return () => void map.off('click', onClick);
-  }, [ready, drawing, onSelect]);
+    map.getCanvas().style.cursor = onPickPoint ? 'crosshair' : '';
+    return () => {
+      map.off('click', onClick);
+      map.getCanvas().style.cursor = '';
+    };
+  }, [ready, drawing, onSelect, onPickPoint]);
 
   return (
     <div className="relative h-full w-full">

@@ -22,10 +22,12 @@ export const waypointSchema = z.object({
 export type Waypoint = z.infer<typeof waypointSchema>;
 
 export const surveyParamsSchema = z.object({
-  altitudeM: z.number().positive(),
+  altitudeM: z.number().min(1).max(500),
   frontOverlapPct: z.number().min(0).max(95),
   sideOverlapPct: z.number().min(0).max(95),
-  speedKmh: z.number().positive(),
+  speedKmh: z.number().min(1).max(200),
+  /** Sweep direction in degrees (0 = east-west lines). Omit to let the planner choose. */
+  sweepAngleDeg: z.number().min(0).max(179).optional(),
 });
 export type SurveyParams = z.infer<typeof surveyParamsSchema>;
 

@@ -6,6 +6,7 @@ export const polygonSchema = z.object({
   type: z.literal('Polygon'),
   coordinates: z.array(z.array(position).min(4)).min(1),
 });
+export type Polygon = z.infer<typeof polygonSchema>;
 
 export const farmSchema = z.object({
   id: z.string(),
