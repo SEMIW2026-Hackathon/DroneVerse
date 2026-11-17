@@ -47,7 +47,7 @@ export function FarmDetailPage() {
   return (
     <div className="flex h-full flex-col md:flex-row">
       <aside className="max-h-[45%] w-full overflow-auto bg-white p-4 md:max-h-none md:w-80">
-        <Link to="/" className="text-sm text-emerald-700">
+        <Link to="/app" className="text-sm text-emerald-700">
           ← All farms
         </Link>
         <h1 className="mb-3 text-lg font-bold text-emerald-900">{farm?.name ?? 'Farm'}</h1>
@@ -67,13 +67,13 @@ export function FarmDetailPage() {
             {fields.length > 0 && (
               <div className="mb-3 grid grid-cols-2 gap-2">
                 <Link
-                  to={`/farms/${farmId}/plan`}
+                 to={`/app/farms/${farmId}/plan`}
                   className="rounded-xl border border-emerald-600 py-2 text-center font-medium text-emerald-700"
                 >
                   Plan a mission
                 </Link>
                 <Link
-                  to={`/farms/${farmId}/3d`}
+                  to={`/app/farms/${farmId}/3d`}
                   className="rounded-xl border border-sky-600 py-2 text-center font-medium text-sky-700"
                 >
                   3D farm
