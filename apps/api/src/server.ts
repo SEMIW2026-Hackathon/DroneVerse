@@ -1,3 +1,4 @@
+import './env.js';
 import { buildApp } from './app.js';
 
 const host = process.env.API_HOST ?? '0.0.0.0';
