@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import type { Map } from 'maplibre-gl';
+import { PLAN_CONFIG } from '@droneverse/shared';
+import { formatHa } from '../../lib/format';
 import { useFarmStore } from '../../store/useFarmStore';
 import { FieldForm } from './FieldForm';
 import { FieldMap } from './FieldMap';
@@ -10,7 +12,7 @@ type Mode = 'browse' | 'drawing' | 'naming';
 
 export function FarmDetailPage() {
   const { farmId = '' } = useParams();
-  const { farms, fields, loadFarms, loadFields, addField, removeField } = useFarmStore();
+  const { farms, fields: allFields, loadFarms, loadFields, addField, removeField } = useFarmStore();
   const [map, setMap] = useState<Map | null>(null);
   const [mode, setMode] = useState<Mode>('browse');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -18,6 +20,9 @@ export function FarmDetailPage() {
   const draw = useDrawing(map, mode !== 'browse');
 
   const farm = farms.find((f) => f.id === farmId);
+  // The store may briefly hold another farm's fields; only show this farm's.
+  const fields = useMemo(() => allFields.filter((f) => f.farmId === farmId), [allFields, farmId]);
+  const tooLarge = draw.areaHa > PLAN_CONFIG.limits.maxFieldHa;
 
   useEffect(() => {
     if (!farms.length) loadFarms().catch((e: Error) => setError(e.message));
@@ -108,8 +113,15 @@ export function FarmDetailPage() {
               Tap the map to place each corner of the field. You need at least 3.
             </p>
             <p className="text-sm font-medium">
-              {draw.points.length} corners{draw.polygon && ` · about ${draw.areaHa.toFixed(2)} ha`}
+              {draw.points.length} corners{draw.polygon && ` · about ${formatHa(draw.areaHa)} ha`}
             </p>
+            {tooLarge && (
+              <p className="rounded-xl border border-red-300 bg-red-50 p-2 text-sm text-red-800">
+                That is over {PLAN_CONFIG.limits.maxFieldHa.toLocaleString('en-US')} ha, which is
+                far bigger than a normal field. Zoom the map in closer and draw just the field.
+                Fields this large cannot be planned for flight.
+              </p>
+            )}
             <div className="flex gap-2">
               <button
                 disabled={!draw.polygon}
@@ -142,6 +154,7 @@ export function FarmDetailPage() {
 
       <div className="min-h-0 flex-1">
         <FieldMap
+          key={farmId}
           fields={fields}
           selectedIds={selectedId ? [selectedId] : []}
           onMapReady={onMapReady}

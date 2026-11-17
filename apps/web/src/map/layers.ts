@@ -1,7 +1,13 @@
 import * as maplibregl from 'maplibre-gl';
+// MapLibre 6 runs GeoJSON sources in a web worker file that sits next to the library.
+// Bundlers move the library but not that file, so without this the worker 404s and
+// every overlay (fields, drawing, flight path) silently fails to render.
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import type { GeoJSONSource, Map, StyleSpecification } from 'maplibre-gl';
 import type { Field } from '@droneverse/shared';
 import { MAP_BASEMAPS, MAP_COLORS, MAP_DEFAULT, type BasemapKey } from '../lib/config';
+
+maplibregl.setWorkerUrl(workerUrl);
 
 export type LngLat = [number, number];
 

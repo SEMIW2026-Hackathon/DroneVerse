@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import type { PlanResult } from '@droneverse/shared';
+import { PLAN_CONFIG, type PlanResult } from '@droneverse/shared';
 import { api } from '../../lib/api';
 import type { LngLat } from '../../map/layers';
 import { useFarmStore } from '../../store/useFarmStore';
@@ -10,53 +10,93 @@ import { DEFAULT_FORM, toRequest, type PlanForm } from './planForm';
 import { PlanResults } from './PlanResults';
 import { PlanSettings } from './PlanSettings';
 
+/** Wait this long after the last change before asking the server for a new plan. */
+const PLAN_DEBOUNCE_MS = 500;
+
 export function MissionPlannerPage() {
   const { farmId = '' } = useParams();
-  const { farms, fields, loadFarms, loadFields } = useFarmStore();
+  const { farms, fields: allFields, loadFarms, loadFields } = useFarmStore();
   const { drones, load: loadDrones } = useFleetStore();
   const [form, setForm] = useState<PlanForm>(DEFAULT_FORM);
   const [result, setResult] = useState<PlanResult | null>(null);
   const [pickingHome, setPickingHome] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Any change makes the last plan out of date.
-  const update = useCallback((patch: Partial<PlanForm>) => {
-    setForm((f) => ({ ...f, ...patch }));
-    setResult(null);
-    setError(null);
-  }, []);
+  const [retry, setRetry] = useState(0);
+  const latestRequest = useRef(0);
 
   const farm = farms.find((f) => f.id === farmId);
+  // The store may briefly hold another farm's fields; only show this farm's.
+  const fields = useMemo(() => allFields.filter((f) => f.farmId === farmId), [allFields, farmId]);
+
+  const update = useCallback((patch: Partial<PlanForm>) => {
+    setForm((f) => ({ ...f, ...patch }));
+  }, []);
 
   useEffect(() => {
     const fail = (e: Error) => setError(e.message);
     if (!farms.length) loadFarms().catch(fail);
     loadDrones().catch(fail);
+    // Load once on mount.
   }, []);
 
-  // Load this farm's fields and start with all of them selected.
+  // Load this farm's fields and start with every plannable one selected.
   useEffect(() => {
     loadFields(farmId)
-      .then(() => update({ fieldIds: useFarmStore.getState().fields.map((x) => x.id) }))
+      .then(() =>
+        update({
+          fieldIds: useFarmStore
+            .getState()
+            .fields.filter((f) => f.areaHa <= PLAN_CONFIG.limits.maxFieldHa)
+            .map((f) => f.id),
+        }),
+      )
       .catch((e: Error) => setError(e.message));
   }, [farmId, loadFields, update]);
 
   // Default to the first drone once the registry loads.
   useEffect(() => {
-    if (drones.length && !form.droneId) setForm((f) => ({ ...f, droneId: drones[0]!.id }));
-  }, [drones, form.droneId]);
+    if (drones.length && !form.droneId) update({ droneId: drones[0]!.id });
+  }, [drones, form.droneId, update]);
+
+  // Plan automatically whenever a field and a drone are selected, and again after any
+  // change. The previous plan stays on screen (dimmed) until the new one arrives.
+  useEffect(() => {
+    const request = toRequest(form);
+    if (!request) {
+      setResult(null);
+      return;
+    }
+    const id = ++latestRequest.current;
+    setBusy(true);
+    setError(null);
+    const timer = setTimeout(async () => {
+      try {
+        const plan = await api.planMission(request);
+        if (id === latestRequest.current) setResult(plan);
+      } catch (err) {
+        if (id === latestRequest.current) {
+          setResult(null);
+          setError((err as Error).message);
+        }
+      } finally {
+        if (id === latestRequest.current) setBusy(false);
+      }
+    }, PLAN_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [form, retry]);
 
   const toggleField = useCallback(
     (id: string | null) => {
-      if (!id) return;
+      const field = fields.find((f) => f.id === id);
+      if (!field || field.areaHa > PLAN_CONFIG.limits.maxFieldHa) return;
       update({
-        fieldIds: form.fieldIds.includes(id)
-          ? form.fieldIds.filter((f) => f !== id)
-          : [...form.fieldIds, id],
+        fieldIds: form.fieldIds.includes(field.id)
+          ? form.fieldIds.filter((f) => f !== field.id)
+          : [...form.fieldIds, field.id],
       });
     },
-    [form.fieldIds, update],
+    [fields, form.fieldIds, update],
   );
 
   const pickPoint = useCallback(
@@ -67,20 +107,6 @@ export function MissionPlannerPage() {
     [update],
   );
 
-  async function generate() {
-    const req = toRequest(form);
-    if (!req) return;
-    setBusy(true);
-    setError(null);
-    try {
-      setResult(await api.planMission(req));
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   const plan = useMemo(
     () => ({
       path: (result?.waypoints ?? []).map((w): LngLat => [w.lon, w.lat]),
@@ -88,8 +114,6 @@ export function MissionPlannerPage() {
     }),
     [result, form.home],
   );
-
-  const ready = form.droneId !== null && form.fieldIds.length > 0;
 
   return (
     <div className="flex h-full flex-col md:flex-row">
@@ -114,21 +138,33 @@ export function MissionPlannerPage() {
           />
         )}
 
-        <button
-          onClick={generate}
-          disabled={!ready || busy}
-          className="my-4 w-full rounded-xl bg-emerald-600 py-2.5 font-medium text-white disabled:opacity-40"
-        >
-          {busy ? 'Planning…' : 'Generate plan'}
-        </button>
-        {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
-        {result && <PlanResults result={result} />}
+        <div className="my-4 min-h-5 text-sm">
+          {busy && <span className="text-emerald-700">Planning the flight…</span>}
+          {!busy && !result && !error && form.fieldIds.length === 0 && fields.length > 0 && (
+            <span className="text-gray-500">Select a field to see the flight path.</span>
+          )}
+        </div>
+        {error && (
+          <div className="mb-3 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+            {error}
+            <button onClick={() => setRetry((n) => n + 1)} className="ml-2 underline">
+              Try again
+            </button>
+          </div>
+        )}
+        {result && (
+          <div className={busy ? 'opacity-50 transition-opacity' : 'transition-opacity'}>
+            <PlanResults result={result} />
+          </div>
+        )}
       </aside>
 
       <div className="min-h-0 flex-1">
         <FieldMap
+          key={farmId}
           fields={fields}
           selectedIds={form.fieldIds}
+          fitIds={form.fieldIds}
           onMapReady={() => {}}
           onSelect={toggleField}
           drawing={false}

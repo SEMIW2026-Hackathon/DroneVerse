@@ -15,8 +15,8 @@ export async function missionRoutes(app: FastifyInstance) {
     const fieldIds = [...new Set(input.fieldIds)];
 
     // Only fields on farms the signed-in user owns.
-    const { rows } = await getPool().query<{ id: string; boundary: Polygon }>(
-      `select f.id, ST_AsGeoJSON(f.boundary)::json as boundary
+    const { rows } = await getPool().query<{ id: string; name: string; boundary: Polygon }>(
+      `select f.id, f.name, ST_AsGeoJSON(f.boundary)::json as boundary
          from fields f join farms fa on fa.id = f.farm_id
         where f.id = any($1::uuid[]) and fa.owner_id = $2`,
       [fieldIds, req.user!.id],

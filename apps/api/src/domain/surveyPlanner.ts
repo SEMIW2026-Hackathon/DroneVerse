@@ -29,6 +29,8 @@ export function gsdCmPerPx(params: SurveyParams, camera: Camera, cameraMP: numbe
 
 export interface SurveyField {
   id: string;
+  /** Only used in messages. */
+  name?: string;
   boundary: Polygon;
 }
 

@@ -1,4 +1,5 @@
-import type { DroneSpec, Field } from '@droneverse/shared';
+import { PLAN_CONFIG, type DroneSpec, type Field } from '@droneverse/shared';
+import { formatHa } from '../../lib/format';
 import { DroneCards } from '../fleet/DroneCards';
 import { RANGES, type PlanForm } from './planForm';
 
@@ -60,20 +61,36 @@ export function PlanSettings({
       <section>
         <h2 className="mb-2 font-semibold text-emerald-900">1. Fields to scan</h2>
         <ul className="space-y-1">
-          {fields.map((f) => (
-            <li key={f.id}>
-              <label className="flex cursor-pointer items-center gap-2 rounded-lg p-1.5 hover:bg-gray-50">
-                <input
-                  type="checkbox"
-                  className="accent-emerald-600"
-                  checked={form.fieldIds.includes(f.id)}
-                  onChange={() => toggleField(f.id)}
-                />
-                <span className="flex-1">{f.name}</span>
-                <span className="text-xs text-gray-500">{f.areaHa.toFixed(2)} ha</span>
-              </label>
-            </li>
-          ))}
+          {fields.map((f) => {
+            const tooLarge = f.areaHa > PLAN_CONFIG.limits.maxFieldHa;
+            return (
+              <li key={f.id}>
+                <label
+                  className={`flex items-center gap-2 rounded-lg p-1.5 ${
+                    tooLarge ? 'opacity-70' : 'cursor-pointer hover:bg-gray-50'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="accent-emerald-600"
+                    disabled={tooLarge}
+                    checked={form.fieldIds.includes(f.id)}
+                    onChange={() => toggleField(f.id)}
+                  />
+                  <span className="flex-1">{f.name}</span>
+                  <span className={`text-xs ${tooLarge ? 'text-red-600' : 'text-gray-500'}`}>
+                    {formatHa(f.areaHa)} ha
+                  </span>
+                </label>
+                {tooLarge && (
+                  <p className="ml-7 text-xs text-red-600">
+                    Too large to plan (over {PLAN_CONFIG.limits.maxFieldHa.toLocaleString('en-US')}{' '}
+                    ha). It was probably drawn zoomed out. Delete it and redraw it closer.
+                  </p>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </section>
 
@@ -81,6 +98,7 @@ export function PlanSettings({
         <h2 className="mb-2 font-semibold text-emerald-900">2. Choose your drone</h2>
         <DroneCards
           drones={drones}
+          layout="list"
           selectedId={form.droneId}
           onSelect={(droneId) => {
             const top = drones.find((d) => d.id === droneId)?.topSpeedKmh ?? form.speedKmh;

@@ -10,6 +10,7 @@ import { polygonAreaHa } from '@droneverse/shared';
 import { estimateBattery } from './batteryEstimator.js';
 import { runRiskChecks } from './riskChecks.js';
 import {
+  PlanError,
   footprintM,
   gsdCmPerPx,
   lineSpacingM,
@@ -31,6 +32,21 @@ export interface PlanInput {
 /** Path + time/battery estimate + risk checks for a survey mission. Pure function. */
 export function planMission(input: PlanInput): PlanResult {
   const { fields, drone, params, windKmh, cfg } = input;
+
+  // Refuse absurdly large fields up front. They are almost always a boundary drawn while
+  // the map was zoomed far out, and would give a meaningless (or failed) plan.
+  const areas = fields.map((f) => polygonAreaHa(f.boundary));
+  fields.forEach((f, i) => {
+    if (areas[i]! > cfg.limits.maxFieldHa) {
+      const name = f.name ? `"${f.name}"` : 'This field';
+      const size = Math.round(areas[i]!).toLocaleString('en-US');
+      const limit = cfg.limits.maxFieldHa.toLocaleString('en-US');
+      throw new PlanError(
+        `${name} is ${size} ha, over the ${limit} ha planning limit. Check its boundary: it ` +
+          'may have been drawn while the map was zoomed too far out. Delete the field and redraw it closer.',
+      );
+    }
+  });
 
   const survey = planSurvey(fields, params, cfg, input.home);
   const estimate = estimateBattery({
@@ -65,7 +81,7 @@ export function planMission(input: PlanInput): PlanResult {
       lineCount,
     })),
     stats: {
-      areaHa: fields.reduce((sum, f) => sum + polygonAreaHa(f.boundary), 0),
+      areaHa: areas.reduce((sum, a) => sum + a, 0),
       waypointCount: survey.waypoints.length,
       totalDistanceM: estimate.totalM,
       surveyDistanceM: estimate.surveyM,

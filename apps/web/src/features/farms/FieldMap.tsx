@@ -25,6 +25,8 @@ interface Props {
   plan?: { path: LngLat[]; home: LngLat | null };
   /** When set, a map click reports its position instead of selecting a field. */
   onPickPoint?: (point: LngLat) => void;
+  /** Zoom to just these fields, and again whenever the list changes. */
+  fitIds?: string[];
 }
 
 export function FieldMap({
@@ -35,6 +37,7 @@ export function FieldMap({
   drawing,
   plan,
   onPickPoint,
+  fitIds,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
@@ -42,7 +45,7 @@ export function FieldMap({
   onMapReadyRef.current = onMapReady;
   const [ready, setReady] = useState(false);
   const [basemap, setBasemapKey] = useState<BasemapKey>('satellite');
-  const fitted = useRef(false);
+  const lastFit = useRef<string | null>(null);
 
   // The map is created once.
   useEffect(() => {
@@ -63,13 +66,21 @@ export function FieldMap({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready) return;
-    setFields(map, fields, selectedIds);
-    if (!fitted.current && fields.length > 0) {
-      fitToFields(map, fields);
-      fitted.current = true;
-    }
+    if (map && ready) setFields(map, fields, selectedIds);
   }, [fields, selectedIds, ready]);
+
+  // Zoom to the fields. Without `fitIds` this happens once, for all fields; with it,
+  // the map re-zooms whenever the set of fields to show changes.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const target = fitIds ? fields.filter((f) => fitIds.includes(f.id)) : fields;
+    if (!target.length) return;
+    const key = fitIds ? target.map((f) => f.id).join(',') : 'all';
+    if (lastFit.current === key) return;
+    lastFit.current = key;
+    fitToFields(map, target);
+  }, [fields, fitIds, ready]);
 
   useEffect(() => {
     if (mapRef.current && ready) setPlan(mapRef.current, plan?.path ?? [], plan?.home ?? null);

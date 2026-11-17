@@ -9,6 +9,8 @@ export interface PlanConfig {
     /** Many regions cap drone altitude at 120 m; check local rules. */
     maxAltitudeM: number;
     maxWindInputKmh: number;
+    /** The planner refuses fields larger than this; it is almost always a drawing mistake. */
+    maxFieldHa: number;
   };
   camera: {
     /** Horizontal field of view. PLACEHOLDER. */
@@ -54,7 +56,7 @@ export interface PlanConfig {
 }
 
 export const PLAN_CONFIG: PlanConfig = {
-  limits: { minAltitudeM: 10, maxAltitudeM: 120, maxWindInputKmh: 80 },
+  limits: { minAltitudeM: 10, maxAltitudeM: 120, maxWindInputKmh: 80, maxFieldHa: 5000 },
   camera: { hFovDeg: 74, aspect: 3 / 4 },
   survey: { angleStepDeg: 5, maxLines: 2000 },
   battery: {

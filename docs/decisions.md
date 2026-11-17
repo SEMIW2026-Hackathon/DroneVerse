@@ -40,3 +40,10 @@ Ambiguous choices made while building, newest last.
 - **Wind is typed in by the operator** (no weather feed yet). No-fly zones are supported by the risk checks but nothing supplies zone data yet, so that check never fires in the app.
 - **Launch point:** defaults to the first corner of the first field; the user can set it on the map. Return distance is measured to it.
 - **Basemap, auth and DB decisions from Phase 1 still apply.**
+
+## Phase 2 fixes
+
+- **Field area was correct.** The "north wheat" boundary is a triangle about 148 km x 107 km (PostGIS 659,612 ha, TypeScript 662,746 ha, flat-earth check 662,654 ha), drawn while the map was at its default zoomed-out view. The planner now refuses any field over `limits.maxFieldHa` (5,000 ha, in `planConfig.ts`) with a message naming the field, and the planner screen greys such fields out. The drawing screen warns live when a shape passes the limit but still lets it be saved: a real 6,000 ha ranch is plausible, even though it can't be planned for flight.
+- **Map overlays were not rendering at all** (field outlines, the shape being drawn, the flight path). MapLibre 6 runs GeoJSON sources in a separate worker file, and Vite does not carry that file along, so the worker 404'd with "Worker failed to load". `map/layers.ts` now points MapLibre at the worker with `setWorkerUrl(...?url)`. Checked in a real browser in both `pnpm dev` and the production build. This affected Phase 1 drawing as well.
+- **Plan runs automatically** (500 ms after the last change) once a field and a drone are selected, and the map zooms to the selected fields. The previous plan stays on screen, dimmed, while a new one loads.
+- **Drone cards** stack one per row in the sidebar (`layout="list"`); the rotor count is now a chip and the name truncates instead of overflowing. Each card has an SVG with the right number of rotors (layout numbers in `lib/droneShape.ts`, tested).

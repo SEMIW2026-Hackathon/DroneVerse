@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PLAN_CONFIG } from '@droneverse/shared';
 import { planMission } from './planMission.js';
+import { PlanError } from './surveyPlanner.js';
 import { rectM } from './testing.js';
 
 const drone = { name: 'Sparrow S4', maxFlightMin: 28, topSpeedKmh: 54, cameraMP: 20 };
@@ -87,5 +88,53 @@ describe('planMission', () => {
     });
     expect(r.fields).toHaveLength(2);
     expect(r.stats.areaHa).toBeCloseTo(0.96 + 1.0, 1);
+  });
+});
+
+describe('planMission: unrealistically large fields', () => {
+  // The "north wheat" boundary that was actually drawn: roughly 148 km x 107 km.
+  const northWheat = {
+    type: 'Polygon' as const,
+    coordinates: [
+      [
+        [37.333975042, 3.85373731],
+        [38.365421771, 4.123625156],
+        [38.669783101, 3.161772892],
+        [37.333975042, 3.85373731],
+      ],
+    ],
+  };
+  const run = (fields: { id: string; name?: string; boundary: typeof northWheat }[]) =>
+    planMission({ fields, drone, params, windKmh: 0, cfg: PLAN_CONFIG });
+
+  it('refuses it, naming the field and its size', () => {
+    expect(() => run([{ id: 'nw', name: 'north wheat', boundary: northWheat }])).toThrow(
+      /"north wheat" is 6\d\d,\d{3} ha, over the 5,000 ha planning limit/,
+    );
+  });
+
+  it('refuses it as a PlanError so the API answers 400', () => {
+    expect(() => run([{ id: 'nw', boundary: northWheat }])).toThrow(PlanError);
+  });
+
+  it('refuses the whole plan if any one selected field is too large', () => {
+    expect(() =>
+      run([
+        { id: 'ok', boundary: rectM(0, 0, 100, 100) },
+        { id: 'nw', boundary: northWheat },
+      ]),
+    ).toThrow(PlanError);
+  });
+
+  it('accepts a big but plausible field just under the limit', () => {
+    // 7 km x 7 km = 4,900 ha: allowed through (it will fail the battery check instead)
+    const r = run([{ id: 'big', boundary: rectM(0, 0, 7000, 7000) }]);
+    expect(r.stats.areaHa).toBeGreaterThan(4800);
+    expect(r.canLaunch).toBe(false);
+    expect(r.risks.some((x) => x.code === 'battery-endurance')).toBe(true);
+  });
+
+  it('refuses one just over the limit', () => {
+    expect(() => run([{ id: 'big', boundary: rectM(0, 0, 7200, 7200) }])).toThrow(/5,000 ha/);
   });
 });
