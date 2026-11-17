@@ -10,10 +10,12 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@droneverse/shared": "workspace:*"
+    "@droneverse/shared": "workspace:*",
+    "ws": "^8.23.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.2",
     "tsx": "^4.19.0",
     "vitest": "^2.1.0"
   }

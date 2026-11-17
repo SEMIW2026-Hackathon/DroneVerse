@@ -38,6 +38,10 @@ export const telemetrySchema = z.object({
   gpsSats: z.number().int().nonnegative(),
   linkQuality: z.number().min(0).max(100),
   mode: droneModeSchema,
+  /** True for anything produced by SimDriver. The UI must label it "Simulated". */
+  simulated: z.boolean(),
+  /** One entry per motor/propeller: true when healthy. */
+  motorsOk: z.array(z.boolean()),
 });
 export type Telemetry = z.infer<typeof telemetrySchema>;
 

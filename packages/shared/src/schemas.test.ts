@@ -13,6 +13,8 @@ describe('shared schemas', () => {
       gpsSats: 10,
       linkQuality: 90,
       mode: 'disarmed',
+      simulated: true,
+      motorsOk: [true, true, true, true],
     });
     expect(result.success).toBe(false);
   });
