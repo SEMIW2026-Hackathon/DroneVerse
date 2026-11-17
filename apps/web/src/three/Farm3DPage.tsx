@@ -58,6 +58,25 @@ export function Farm3DPage() {
     if (!linkAlive || telemetry.telemetry?.mode !== 'mission') return;
     sendCommand('00000000-0000-4000-8000-000000000000', { type: 'manualMode' });
   }, [linkAlive, sendCommand, telemetry.telemetry?.mode]);
+  const onStopManual = useCallback(() => {
+    if (!manualEnabled) return;
+    sendCommand('00000000-0000-4000-8000-000000000000', {
+      type: 'manualControl',
+      forward: 0,
+      right: 0,
+      vertical: 0,
+      yawRate: 0,
+      durationMs: 300,
+    });
+  }, [manualEnabled, sendCommand]);
+  const onReturnHome = useCallback(() => {
+    if (!linkAlive) return;
+    sendCommand('00000000-0000-4000-8000-000000000000', { type: 'returnToHome' });
+  }, [linkAlive, sendCommand]);
+  const onAbort = useCallback(() => {
+    if (!linkAlive) return;
+    sendCommand('00000000-0000-4000-8000-000000000000', { type: 'abort' });
+  }, [linkAlive, sendCommand]);
   const sendSimSpeed = (multiplier: 1 | 2 | 4) => {
     setSpeed(multiplier);
     if (linkAlive && telemetry.telemetry?.simulated) {
@@ -184,8 +203,27 @@ export function Farm3DPage() {
               disabledReason={manualDisabledReason}
               onEnable={onEnableManual}
               onControl={onManualControl}
+              onStop={onStopManual}
             />
           </div>
+          {linkAlive && (
+            <div className="pointer-events-auto absolute right-0 top-[23rem] flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={onReturnHome}
+                className="rounded-full bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 shadow"
+              >
+                Return to home
+              </button>
+              <button
+                type="button"
+                onClick={onAbort}
+                className="rounded-full bg-red-600 px-4 py-2 text-xs font-bold text-white shadow"
+              >
+                Abort
+              </button>
+            </div>
+          )}
         </div>
       </main>
     </div>

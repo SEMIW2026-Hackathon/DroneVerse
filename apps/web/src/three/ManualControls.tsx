@@ -13,11 +13,12 @@ interface Props {
   disabledReason?: string;
   onEnable: () => void;
   onControl: (control: ManualInput) => void;
+  onStop: () => void;
 }
 
 const neutral: ManualInput = { forward: 0, right: 0, vertical: 0, yawRate: 0, durationMs: MANUAL_INPUT_TIMEOUT_MS };
 
-export function ManualControls({ enabled, disabledReason, onEnable, onControl }: Props) {
+export function ManualControls({ enabled, disabledReason, onEnable, onControl, onStop }: Props) {
   const keys = useRef(new Set<string>());
   const joystick = useRef<HTMLDivElement>(null);
   const joystickInput = useRef({ forward: 0, right: 0, vertical: 0, yawRate: 0 });
@@ -104,6 +105,14 @@ export function ManualControls({ enabled, disabledReason, onEnable, onControl }:
         className="mb-2 rounded-full bg-emerald-500 px-3 py-1 text-[10px] font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {enabled ? 'Manual mode active' : 'Take manual control'}
+      </button>
+      <button
+        type="button"
+        disabled={!enabled}
+        onClick={onStop}
+        className="mb-2 ml-2 rounded-full bg-amber-400 px-3 py-1 text-[10px] font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Stop / hover
       </button>
       <div
         ref={joystick}
