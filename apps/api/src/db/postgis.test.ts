@@ -1,11 +1,13 @@
 import '../env.js';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { polygonAreaHa } from '@droneverse/shared';
 import { buildApp } from '../app.js';
 import { closePool, getPool } from './pool.js';
 
 // These tests talk to the real database in DATABASE_URL, so they only run on request:
 //   RUN_DB_TESTS=1 pnpm --filter @droneverse/api test
+// Hosted-database round trips are slow, so allow plenty of time.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 const run = process.env.RUN_DB_TESTS === '1' ? describe : describe.skip;
 
 const SHAPES = {
