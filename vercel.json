@@ -1,11 +1,14 @@
 {
   "services": {
-    "web": { "root": "apps/web", "installCommand": "cd ../.. && pnpm install" },
+    "web": {
+      "root": "apps/web",
+      "installCommand": "cd ../.. && pnpm install && pnpm --filter @droneverse/shared build"
+    },
     "api": {
       "root": "apps/api",
       "framework": "fastify",
       "entrypoint": "src/server.ts",
-      "installCommand": "cd ../.. && pnpm install"
+      "installCommand": "cd ../.. && pnpm install && pnpm --filter @droneverse/shared build"
     }
   },
   "rewrites": [
