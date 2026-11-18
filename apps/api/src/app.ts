@@ -1,4 +1,5 @@
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
+import cors from '@fastify/cors';
 import { WebSocketServer } from 'ws';
 import { ZodError } from 'zod';
 import { authRoutes } from './routes/auth.js';
@@ -12,6 +13,12 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({ logger: process.env.NODE_ENV !== 'test' });
+
+  app.register(cors, {
+    origin: process.env.CORS_ORIGIN?.split(',').map((o) => o.trim()) ?? true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  });
+
   const relay = new TelemetryRelay();
   const websocketServer = new WebSocketServer({ noServer: true });
 

@@ -10,6 +10,7 @@ import {
   type Telemetry,
 } from '@droneverse/shared';
 import { pushRenderTelemetry } from '../three/telemetryRenderStore';
+import { API_BASE } from './config';
 
 export type TelemetryLinkState =
   | 'connecting'
@@ -37,6 +38,13 @@ export interface TelemetryLink {
 }
 
 function websocketUrl(): string {
+  // Production: API_BASE is the full Render address (Vercel can't proxy WebSockets).
+  if (/^https?:\/\//.test(API_BASE)) {
+    const url = new URL(API_BASE);
+    const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${url.host}/ws/telemetry`;
+  }
+  // Local dev: same host as the page, through the dev proxy.
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${window.location.host}/ws/telemetry`;
 }
@@ -114,108 +122,4 @@ export function useTelemetryLink() {
   });
   const socketRef = useRef<WebSocket | null>(null);
   const pendingTelemetryRef = useRef<string | null>(null);
-  const telemetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    const checkApi = async () => {
-      try {
-        const response = await fetch('/api/health', { cache: 'no-store' });
-        if (!response.ok) throw new Error(`API health returned ${response.status}`);
-        if (!cancelled) {
-          setLink((current) => ({
-            ...current,
-            apiReachable: true,
-            state: getTelemetryLinkState(true, current.bridgeOnline, current.receivedAt),
-          }));
-        }
-      } catch {
-        if (!cancelled) {
-          setLink((current) => ({
-            ...current,
-            apiReachable: false,
-            state: 'api-unreachable',
-          }));
-        }
-      }
-    };
-    void checkApi();
-    const apiTimer = setInterval(() => void checkApi(), 1_000);
-    const socket = new WebSocket(websocketUrl());
-    socketRef.current = socket;
-    socket.onopen = () =>
-      setLink((current) => ({
-        ...current,
-        state: getTelemetryLinkState(current.apiReachable, current.bridgeOnline, current.receivedAt),
-      }));
-    socket.onmessage = (event) => {
-      let value: unknown;
-      try {
-        value = JSON.parse(event.data);
-      } catch {
-        setLink((current) => reduceTelemetryMessage(current, event.data));
-        return;
-      }
-      const parsed = serverMessageSchema.safeParse(value);
-      if (parsed.success && parsed.data.type === 'telemetry') {
-        pushRenderTelemetry(parsed.data.telemetry);
-        pendingTelemetryRef.current = event.data;
-        if (telemetryTimerRef.current === null) {
-          telemetryTimerRef.current = setTimeout(() => {
-            const raw = pendingTelemetryRef.current;
-            pendingTelemetryRef.current = null;
-            telemetryTimerRef.current = null;
-            if (raw !== null) setLink((current) => reduceTelemetryMessage(current, raw));
-          }, TELEMETRY_UPDATE_INTERVAL_MS);
-        }
-        return;
-      }
-      setLink((current) => reduceTelemetryMessage(current, event.data));
-    };
-    const markSocketUnavailable = () =>
-      setLink((current) => ({
-        ...current,
-        state: current.apiReachable === false ? 'api-unreachable' : 'bridge-offline',
-      }));
-    socket.onerror = markSocketUnavailable;
-    socket.onclose = markSocketUnavailable;
-    const staleTimer = setInterval(() => {
-      setLink((current) =>
-        current.bridgeOnline === true
-          ? {
-              ...current,
-              state: getTelemetryLinkState(
-                current.apiReachable,
-                current.bridgeOnline,
-                current.receivedAt,
-              ),
-            }
-          : current,
-      );
-    }, TELEMETRY_UPDATE_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(apiTimer);
-      socketRef.current = null;
-      if (telemetryTimerRef.current !== null) clearTimeout(telemetryTimerRef.current);
-      clearInterval(staleTimer);
-      socket.close();
-    };
-  }, []);
-
-  const sendCommand = useCallback((missionId: string, command: ClientCommand) => {
-    const socket = socketRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
-    const requestId = globalThis.crypto?.randomUUID() ?? `${Date.now()}-${Math.random()}`;
-    const message = clientMessageSchema.parse({
-      type: 'command',
-      requestId,
-      missionId,
-      command,
-    });
-    socket.send(JSON.stringify(message));
-    return true;
-  }, []);
-
-  return { ...link, sendCommand };
-}
+  const telemetryTimerRef =
