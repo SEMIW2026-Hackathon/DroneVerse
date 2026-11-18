@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Farm Drone Sim</title>
+<style>body{margin:0;overflow:hidden;font-family:monospace}#ui{position:fixed;top:8px;left:8px;background:#000a;color:#0f0;padding:10px;border-radius:6px}button{margin:2px;cursor:pointer}#log{max-height:150px;overflow:auto;font-size:11px;color:#ff0}</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js"}}</script>
+</head><body>
+<div id="ui">
+<button id="con">Connect Joystick (USB)</button><br>
+<button data-m="MANUAL">Manual</button><button data-m="AUTO">Auto Scan</button><button data-m="AUTOMATION">Automation (Scan+Spray)</button>
+<div id="st"></div><div id="log"></div>
+<small>Keys: WASD move, Q/E alt, ←/→ yaw, SPACE / joystick button = spray (Manual), M cycle mode</small>
+</div>
+<script type="module">
+import * as THREE from 'three';
+const S=new THREE.Scene();S.background=new THREE.Color(0x87ceeb);
+const C=new THREE.PerspectiveCamera(60,innerWidth/innerHeight,.1,1000);
+const R=new THREE.WebGLRenderer({antialias:true});R.setSize(innerWidth,innerHeight);document.body.appendChild(R.domElement);
+S.add(new THREE.HemisphereLight(0xffffff,0x446622,1.2));
+// Field
+const F=60;S.add(new THREE.Mesh(new THREE.PlaneGeometry(F*2,F*2),new THREE.MeshLambertMaterial({color:0x6b4a2b})).rotateX(-Math.PI/2));
+const plants=[],cg=new THREE.ConeGeometry(.4,1.2,5);
+const mats={ok:new THREE.MeshLambertMaterial({color:0x2e9e2e}),pest:new THREE.MeshLambertMaterial({color:0xd4c21a}),disease:new THREE.MeshLambertMaterial({color:0x8b3a1a}),done:new THREE.MeshLambertMaterial({color:0x00ffaa})};
+for(let x=-F+5;x<F-5;x+=3)for(let z=-F+5;z<F-5;z+=3){
+ const r=Math.random(),t=r<.04?'pest':r<.07?'disease':'ok';
+ const m=new THREE.Mesh(cg,mats.ok);m.position.set(x,.6,z);m.userData={t,found:false,treated:false};S.add(m);plants.push(m);}
+// Drone
+const D=new THREE.Group(),bm=new THREE.MeshLambertMaterial({color:0x222222});
+D.add(new THREE.Mesh(new THREE.BoxGeometry(1.2,.3,1.2),bm));
+const props=[];for(const[a,b]of[[1,1],[1,-1],[-1,1],[-1,-1]]){
+ const arm=new THREE.Mesh(new THREE.BoxGeometry(.1,.1,1.4),bm);arm.position.set(a*.5,0,b*.5);arm.rotation.y=Math.atan2(a,b);D.add(arm);
+ const p=new THREE.Mesh(new THREE.CylinderGeometry(.5,.5,.03,12),new THREE.MeshBasicMaterial({color:0xaaaaaa,transparent:true,opacity:.5}));p.position.set(a,.2,b);D.add(p);props.push(p);}
+const beam=new THREE.Mesh(new THREE.ConeGeometry(4,1,24,1,true),new THREE.MeshBasicMaterial({color:0x00ff00,transparent:true,opacity:.15,side:2}));D.add(beam);
+const spray=new THREE.Mesh(new THREE.ConeGeometry(1,1,12,1,true),new THREE.MeshBasicMaterial({color:0x66ccff,transparent:true,opacity:.5}));spray.visible=false;D.add(spray);
+D.position.set(-F+5,8,-F+5);S.add(D);
+// State
+let mode='MANUAL',yaw=0,inp={x:0,y:0,z:0,r:0},keys={},wps=[],wi=0,target=null,sprayT=0;
+const log=t=>{const l=document.getElementById('log');l.innerHTML=t+'<br>'+l.innerHTML};
+function setMode(m){mode=m;wi=0;target=null;
+ if(m!=='MANUAL'){wps=[];let row=0;for(let z=-F+5;z<=F-5;z+=7,row++){const xs=[-F+5,F-5];if(row%2)xs.reverse();xs.forEach(x=>wps.push(new THREE.Vector3(x,8,z)));}}
+ log('Mode: '+m);}
+document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{setMode(b.dataset.m);b.blur()});
+onkeydown=e=>{keys[e.key.toLowerCase()]=1;if(e.key=='m')setMode(['MANUAL','AUTO','AUTOMATION'][(['MANUAL','AUTO','AUTOMATION'].indexOf(mode)+1)%3]);};
+onkeyup=e=>keys[e.key.toLowerCase()]=0;
+// Web Serial joystick: Arduino sends "x,y,btn" or "x,y,z,btn" (0-1023, btn 0=pressed)
+let lastBtn=1;
+document.getElementById('con').onclick=async()=>{
+ try{const p=await navigator.serial.requestPort();await p.open({baudRate:115200});log('Joystick connected');
+ const rd=p.readable.pipeThrough(new TextDecoderStream()).getReader();let buf='';
+ while(true){const{value,done}=await rd.read();if(done)break;buf+=value;let i;
+  while((i=buf.indexOf('\n'))>=0){const v=buf.slice(0,i).trim().split(',').map(Number);buf=buf.slice(i+1);
+   if(v.length<3||v.some(isNaN))continue;const n=a=>Math.abs((a-512)/512)<.1?0:(a-512)/512;
+   inp.x=n(v[0]);inp.y=-n(v[1]);inp.z=v.length>3?-n(v[2]):0;const b=v[v.length-1];
+   inp.spray=b==0;}}}catch(e){log('Serial error: '+e.message+' (use Chrome/Edge)')}};
+// Loop
+const clk=new THREE.Clock(),tmp=new THREE.Vector3();
+function scan(){const r=D.position.y*.5;for(const p of plants){const u=p.userData;
+ if(!u.found&&u.t!=='ok'&&Math.hypot(p.position.x-D.position.x,p.position.z-D.position.z)<r){u.found=true;p.material=mats[u.t];
+  log(`${u.t.toUpperCase()} at (${p.position.x.toFixed(0)},${p.position.z.toFixed(0)})`);}}}
+function goTo(t,dt,sp=10){tmp.subVectors(t,D.position);const d=tmp.length();if(d>.3){tmp.normalize().multiplyScalar(Math.min(sp*dt,d));D.position.add(tmp);yaw=Math.atan2(-tmp.x,-tmp.z);}return d;}
+function loop(){requestAnimationFrame(loop);const dt=Math.min(clk.getDelta(),.05);
+ props.forEach(p=>p.rotation.y+=1);spray.visible=false;
+ if(mode==='MANUAL'){
+  const f=(keys.w?1:0)-(keys.s?1:0)+inp.y,s=(keys.d?1:0)-(keys.a?1:0)+inp.x,u=(keys.e?1:0)-(keys.q?1:0)+inp.z;
+  yaw+=((keys.arrowleft?1:0)-(keys.arrowright?1:0))*2*dt;
+  D.position.x+=(-Math.sin(yaw)*f+Math.cos(yaw)*s)*12*dt;D.position.z+=(-Math.cos(yaw)*f-Math.sin(yaw)*s)*12*dt;
+  D.position.y=Math.max(1,Math.min(30,D.position.y+u*6*dt));D.rotation.x=-f*.2;D.rotation.z=-s*.2;
+  if(keys[' ']||inp.spray){spray.visible=true;spray.position.y=-D.position.y/2;spray.scale.set(1,D.position.y,1);
+   for(const p of plants){const u=p.userData;if(u.t!=='ok'&&!u.treated&&Math.hypot(p.position.x-D.position.x,p.position.z-D.position.z)<1.5){u.found=u.treated=true;p.material=mats.done;log('Manually treated plant');}}}
+ }else{D.rotation.x=D.rotation.z=0;
+  if(mode==='AUTOMATION'&&!target)target=plants.find(p=>p.userData.found&&!p.userData.treated);
+  if(target){const tp=target.position.clone().setY(3);
+   if(goTo(tp,dt)<.4){spray.visible=true;spray.position.y=-1.5;spray.scale.set(1,2,1);sprayT+=dt;
+    if(sprayT>1.5){target.userData.treated=true;target.material=mats.done;log('Treated plant');target=null;sprayT=0;}}}
+  else if(wi<wps.length){if(goTo(wps[wi],dt)<.4)wi++;}
+  else if(wi===wps.length){wi++;const f=plants.filter(p=>p.userData.found);
+   log(`SCAN DONE: ${f.filter(p=>p.userData.t=='pest').length} pest, ${f.filter(p=>p.userData.t=='disease').length} disease`);}}
+ D.rotation.y=yaw;scan();
+ beam.position.y=-D.position.y/2;beam.scale.set(D.position.y*.125,D.position.y,D.position.y*.125);
+ C.position.copy(D.position).add(new THREE.Vector3(Math.sin(yaw)*12,6,Math.cos(yaw)*12));C.lookAt(D.position);
+ const fd=plants.filter(p=>p.userData.found);
+ document.getElementById('st').innerHTML=`Mode: <b>${mode}</b> | Alt: ${D.position.y.toFixed(1)}m<br>Detected: ${fd.length} | Treated: ${fd.filter(p=>p.userData.treated).length} | Total infected: ${plants.filter(p=>p.userData.t!='ok').length}`;
+ R.render(S,C);}
+setMode('MANUAL');loop();
+onresize=()=>{C.aspect=innerWidth/innerHeight;C.updateProjectionMatrix();R.setSize(innerWidth,innerHeight)};
+</script></body></html>

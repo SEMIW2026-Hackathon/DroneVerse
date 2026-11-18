@@ -8,3 +8,6 @@ __pycache__/
 *.egg-info/
 *.tsbuildinfo
 .DS_Store
+
+# Playwright MCP browser logs
+.playwright-mcp/
